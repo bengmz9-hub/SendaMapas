@@ -36,7 +36,7 @@ captura con comprobaciones contra una base local.
 
 El código Lua de SendaMapas reutiliza y adapta código de SendaMejora (mismo
 proyecto local ADDONWOW): cargador bajo demanda, HUD, ventana de opciones,
-diario, flecha propia y lectura del registro de misiones; TomTom puede usarse como flecha alternativa si el jugador lo tiene, pero no hace falta.
+flecha propia y lectura del registro de misiones; TomTom puede usarse como flecha alternativa si el jugador lo tiene, pero no hace falta.
 SendaMejora declara su código propio como GPL-3.0-or-later; SendaMapas
 mantiene esa licencia (texto en `LICENSE.txt`).
 

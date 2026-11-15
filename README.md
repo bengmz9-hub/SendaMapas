@@ -38,7 +38,6 @@ No se instala nada automáticamente: estos pasos los haces tú.
   `estandarte`, `tactico`); sin nombre lista los disponibles.
 - `/smapas intensidad 1|2|3`: intensidad del color de las marcas (1 normal, 2 intensa por defecto, 3 máxima).
 - `/smapas minimapa tamano <50-200>`: tamaño de los símbolos del minimapa en porcentaje (100 por defecto).
-- `/smapas diario`: lista completa del mapa, detalle y cadena de la misión elegida.
 - `/smapas una` · `/smapas lista [1-8]`: una misión o lista en el panel.
 - `/smapas fondo <0-100>` · `/smapas fondo original`: opacidad del fondo.
 - `/smapas restaurar`: recupera las misiones saltadas.
@@ -165,15 +164,14 @@ No se instala nada automáticamente: estos pasos los haces tú.
 - **Dónde te quedaste**: al actualizar, la misión elegida es la que tienes lista para entregar, o en
   curso, o la continuación de una cadena que ya empezaste (una misión disponible porque ya hiciste
   su previa) antes que cualquier otra misión nueva del mapa.
-- **Flechas `<` `>`**: pasan a la misión anterior o siguiente **del mismo mapa** (panel y
-  diario); la flecha de navegación y las marcas siguen a la misión elegida. No cambian de mapa.
-- **Cambiar de mapa a mano**: botón «Mapas» del panel, «Elegir mapa» en el diario, o
+- **Flechas `<` `>`**: pasan a la misión anterior o siguiente **del mismo mapa** (botones
+  del panel); la flecha de navegación y las marcas siguen a la misión elegida. No cambian de mapa.
+- **Cambiar de mapa a mano**: botón «Mapas» del panel, o
   `/smapas siguiente` · `/smapas anterior` (orden de progresión). Con `auto off` el mapa elegido no
   cambia al moverte.
-- **Cadenas entre mapas**: en el diario, la misión elegida muestra sus
-  previas, siguientes y excluyentes con el nombre del mapa al que pertenecen.
-  Pulsar una de otro mapa carga su módulo y la selecciona. La etiqueta se ve
-  sin cargar ese módulo (cada módulo guarda nombre y mapa de sus enlaces).
+- **Cadenas entre mapas**: la información de una misión muestra el mapa de sus previas y siguientes sin
+  cargar ese módulo (cada módulo guarda nombre y mapa de sus enlaces). El panel ya no tiene ventana de
+  diario: se quitó a petición del autor.
 - **Filtros** (Opciones > Filtros): para élite, grupo, mazmorra, banda, JcJ,
   repetibles, estacionales/eventos, profesión, otra clase, otra raza, otra
   facción y entregadas se elige Mostrar, Marcar (etiqueta) u Ocultar. Por

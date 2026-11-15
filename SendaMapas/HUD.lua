@@ -66,10 +66,6 @@ function ns:SetHUDMode(mode, count)
     self:RenderHUD()
 end
 
-function ns:ToggleBook()
-    self.book:SetShown(not self.book:IsShown())
-end
-
 function ns:RepaintSurfaces()
     for _, entry in ipairs(self.hudSurfaces or {}) do paint(entry.target, entry.method, entry.key) end
 end
@@ -219,7 +215,7 @@ end
 -- The quest line of the panel in two parts: meta ("Nv 8 · mín 6 · 120 PX") and what to do / where.
 function ns:HUDInstructionParts(id, state)
     local q = self:Quest(id)
-    if not q then return "", "Consulta los datos en el diario." end
+    if not q then return "", "Elige una misión en el panel." end
     local meta = self:QuestInfoLine(q)
     if state == "active" then
         local live = self:LiveObjectives(id)
@@ -303,7 +299,6 @@ function ns:CreateUI()
     end)
     f:SetScript("OnHide", function()
         if ns.resizing then ns:FinishHUDResize() end
-        if ns.book then ns.book:Hide() end
         if ns.hudSettings then ns.hudSettings:Hide() end
         if ns.mapPicker then ns.mapPicker:Hide() end
     end)
@@ -342,9 +337,6 @@ function ns:CreateUI()
         if b.SetBackdrop then paint(b, "SetBackdropColor", "button") end
         if GameTooltip then GameTooltip:Hide() end
     end)
-    self.hudDiary = button(f, "Diario", 70, 382, function() ns:ToggleBook() end)
-    self.hudDiary:ClearAllPoints()
-    self.hudDiary:SetPoint("TOPRIGHT", f, "TOPRIGHT", -58, -7)
     self.optionsButton = button(f, "", 32, 464, function() ns:ToggleHUDSettings() end)
     self.optionsButton:ClearAllPoints()
     self.optionsButton:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -7)
@@ -407,7 +399,6 @@ function ns:CreateUI()
     self.hudMark:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 8)
     self:CreateHUDSettings()
     self:SetBackgroundOpacity(self.saved.backgroundOpacity)
-    self:CreateBookWindow()
     self.resizeHandles = self:CreateResizeHandles(f, function() ns.resizing = true end, function() ns:FinishHUDResize() end)
     f:SetScript("OnSizeChanged", function(_, width)
         local clamped = bounded(width, 510, 360, 900)

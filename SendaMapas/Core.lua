@@ -352,7 +352,6 @@ SlashCmdList.SENDAMAPAS = function(message)
     elseif command == "una" then ns:SetHUDMode("single"); ns.frame:Show()
     elseif command == "lista" or command:match("^lista %d+$") then
         ns:SetHUDMode("list", command:match("^lista (%d+)$")); ns.frame:Show()
-    elseif command == "diario" then ns.frame:Show(); ns:ToggleBook()
     elseif command == "opciones" then ns.frame:Show(); ns:ToggleHUDSettings()
     elseif command == "filtros" then ns.frame:Show(); ns.hudSettings:Show(); ns:SetOptionsSection("filters")
     elseif command == "fondo original" then ns:SetBackgroundOpacity(nil)

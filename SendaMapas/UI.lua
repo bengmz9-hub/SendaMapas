@@ -1,10 +1,8 @@
--- Diary window (quest list of the active map, details and chain links) and
--- the map selector. Adapted from SendaMejora/UI.lua.
+-- Map selector and shared helpers. Adapted from SendaMejora/UI.lua.
 local _, ns = ...
 ns.labels = {available = "Recoger", active = "En curso", turnin = "Entregar", done = "Entregada",
     prereq = "Faltan previas", blocked = "Rama cerrada", unknown = "Comprobar"}
 local labels = ns.labels
-local MAX_LINKS = 6
 
 local function button(parent, text, width, fn)
     local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
@@ -31,83 +29,6 @@ end
 function ns:TagsText(q)
     local _, tags = self.Filters.Visible(q, self.context, self.saved.filters, self:EntryState(q.i))
     return (tags and #tags > 0) and (" |cffffc864[" .. table.concat(tags, "] [") .. "]|r") or ""
-end
-
-function ns:CreateBookWindow()
-    local f = CreateFrame("Frame", "SendaMapasBook", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
-    self.book = f
-    f:SetSize(480, 690)
-    f:SetPoint("CENTER")
-    f:SetFrameStrata("DIALOG")
-    f:SetClampedToScreen(true)
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", function() f:StartMoving() end)
-    f:SetScript("OnDragStop", function() f:StopMovingOrSizing() end)
-    if f.SetBackdrop then
-        f:SetBackdrop({bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 16,
-            insets = {left = 4, right = 4, top = 4, bottom = 4}})
-        f:SetBackdropColor(0.025, 0.04, 0.07, 0.97)
-    end
-    text(f, "GameFontNormalLarge", "TOPLEFT", 18, -18):SetText("Senda Mapas")
-    text(f, "GameFontDisableSmall", "TOPLEFT", 18, -42):SetText("ALPHA · Misiones por mapa · WoW Forever")
-    local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", -3, -3)
-    self.hereButton = button(f, "Mapa actual", 120, function()
-        local zone, seen = ns:CurrentZoneId()
-        if zone then ns:LoadMap(zone) else ns:Print("No se reconoce el mapa actual (" .. tostring(seen or "?") .. ").") end
-    end)
-    self.hereButton:SetPoint("TOPLEFT", 18, -64)
-    self.pickerButton = button(f, "Elegir mapa", 120, function() ns:ToggleMapPicker() end)
-    self.pickerButton:SetPoint("LEFT", self.hereButton, "RIGHT", 8, 0)
-    self.filtersButton = button(f, "Filtros", 100, function() ns.hudSettings:Show(); ns:SetOptionsSection("filters") end)
-    self.filtersButton:SetPoint("LEFT", self.pickerButton, "RIGHT", 8, 0)
-    local previous = button(f, "<", 30, function() ns:MoveQuest(-1) end)
-    previous:SetPoint("TOPLEFT", 18, -98)
-    local following = button(f, ">", 30, function() ns:MoveQuest(1) end)
-    following:SetPoint("TOPRIGHT", -18, -98)
-    self.previousButton, self.followingButton = previous, following
-    self.heading = text(f, "GameFontNormal", "TOPLEFT", 58, -103, 360)
-    self.summary = text(f, "GameFontHighlightSmall", "TOPLEFT", 18, -139, 442)
-    self.summary:SetHeight(38)
-
-    local scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 18, -183)
-    scroll:SetPoint("BOTTOMRIGHT", -37, 244)
-    local child = CreateFrame("Frame", nil, scroll)
-    child:SetSize(420, 1)
-    scroll:SetScrollChild(child)
-    self.scroll, self.list = scroll, child
-    self.detail = text(f, "GameFontHighlightSmall", "BOTTOMLEFT", 18, 146, 442)
-    self.detail:SetHeight(92)
-    self.detail:SetJustifyV("TOP")
-    self.linkButtons = {}
-    for index = 1, MAX_LINKS do
-        local b = button(f, "", 216, function(self) if self.questID then ns:OpenLink(self.questID) end end)
-        local column, row = (index - 1) % 2, math.floor((index - 1) / 2)
-        b:SetPoint("BOTTOMLEFT", 18 + column * 226, 118 - row * 25)
-        b:SetScript("OnEnter", function(self)
-            if GameTooltip and self.tooltip then
-                GameTooltip:SetOwner(self, "ANCHOR_TOP")
-                GameTooltip:SetText(self.tooltip, 1, 1, 1, 1, true)
-                GameTooltip:Show()
-            end
-        end)
-        b:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-        b:Hide()
-        self.linkButtons[index] = b
-    end
-    self.markButton = button(f, "Marcar destino", 137, function() if ns.selected then ns:Navigate(ns.selected) end end)
-    self.markButton:SetPoint("BOTTOMLEFT", 18, 30)
-    self.skipButton = button(f, "Saltar", 85, function() ns:Skip() end)
-    self.skipButton:SetPoint("LEFT", self.markButton, "RIGHT", 6, 0)
-    self.restoreButton = button(f, "Restaurar saltadas", 150, function() ns:RestoreChoices() end)
-    self.restoreButton:SetPoint("LEFT", self.skipButton, "RIGHT", 6, 0)
-    text(f, "GameFontDisableSmall", "BOTTOMLEFT", 18, 10, 440):SetText("/smapas · /smapas mapas · /smapas auto on|off · /smapas filtros")
-    if UISpecialFrames then table.insert(UISpecialFrames, "SendaMapasBook") end
-    f:Hide()
 end
 
 -- Map picker: headers per level band (and one for dungeons), a colored strip per continent group,
@@ -279,85 +200,6 @@ function ns:StateInstruction(q, state, reason)
 end
 
 function ns:Render()
-    if not self.book then return end
-    local ids, title = self:Entries()
-    local zoneId = self.saved.map
-    local info = self.Index.maps[zoneId]
-    self.heading:SetText((info and (info.o .. "/" .. #self.Index.order .. " · " .. self:RangeText(zoneId) .. " · ") or "") .. title)
-    local where = ""
-    if self.currentZone and self.currentZone ~= zoneId then where = " Estás en " .. self:MapLabel(self.currentZone) .. "." end
-    if self.moduleError and not self.activeData then
-        self.summary:SetText(self.moduleError)
-    else
-        local _, total, completed, all = self:MapProgress()
-        self.summary:SetText(total .. " visibles de " .. all .. " misiones · " .. completed .. " entregadas · " ..
-            "Seguir mapa actual: " .. (self.saved.autoSelect and "sí" or "no") .. "." .. where)
-    end
-    local count = 0
-    for _, id in ipairs(ids) do
-        count = count + 1
-        local row = self.rows[count]
-        if not row then
-            row = CreateFrame("Button", nil, self.list)
-            row:SetSize(416, 70)
-            row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
-            row.title = text(row, "GameFontHighlight", "TOPLEFT", 4, -4, 407)
-            row.state = text(row, "GameFontNormalSmall", "TOPLEFT", 4, -24, 407)
-            row.place = text(row, "GameFontHighlightSmall", "TOPLEFT", 4, -43, 407)
-            row.place:SetHeight(25)
-            row:SetScript("OnClick", function(b) ns:SelectQuest(b.questID) end)
-            self.rows[count] = row
-        end
-        row:SetPoint("TOPLEFT", self.list, "TOPLEFT", 0, -(count-1)*73)
-        row.questID = id
-        local q = self:Quest(id)
-        local state = self:EntryState(id)
-        row.title:SetText((id == self.selected and "|cff33bbff> |r" or "") .. q.n .. self:TagsText(q))
-        row.state:SetText((labels[state] or state) .. " · " .. self:QuestInfoLine(q))
-        local chain = self:ChainSummary(q)
-        row.place:SetText(self:PickupText(q) .. (chain ~= "" and ("\n" .. chain) or ""))
-        row:Show()
-    end
-    for i = count+1, #self.rows do self.rows[i]:Hide() end
-    self.list:SetHeight(math.max(1, count*73))
-    local q = self.selected and self:Quest(self.selected)
-    local links = q and self:ChainLinks(q) or {}
-    table.sort(links, function(a, b)
-        if (a.sameMap and 1 or 0) ~= (b.sameMap and 1 or 0) then return not a.sameMap end
-        return a.id < b.id
-    end)
-    for index, b in ipairs(self.linkButtons) do
-        local link = links[index]
-        if link then
-            b.questID = link.id
-            b:SetText(link.kind .. ": " .. link.name .. " · " .. link.label)
-            b.tooltip = link.kind .. ": " .. link.name .. " (" .. link.id .. ")\nMapa: " .. link.label ..
-                (link.zone and not link.loaded and "\nAl pulsar se carga su módulo." or "")
-            b:SetEnabled(link.zone ~= nil)
-            b:Show()
-        else
-            b.questID, b.tooltip = nil, nil
-            b:Hide()
-        end
-    end
-    if q then
-        local state, reason = self:EntryState(q.i)
-        local extra = #links > MAX_LINKS and ("\nCadena: " .. (#links - MAX_LINKS) .. " enlaces más; ver lista.") or ""
-        self.detail:SetText(q.n .. " · " .. (labels[state] or state) .. " · " .. self:QuestInfoLine(q) .. "\n" ..
-            self:StateInstruction(q, state, reason) .. extra)
-        self.markButton:SetEnabled(true)
-    else
-        self.detail:SetText(self.activeData and (count == 0 and
-            "No quedan misiones visibles. Revisa los filtros o restaura las saltadas." or
-            "Selecciona una misión para ver dónde recogerla, sus objetivos y su cadena.") or
-            (self.moduleError or "Elige un mapa."))
-        self.markButton:Disable()
-    end
-    self.skipButton:SetEnabled(q ~= nil)
-    local position = info and info.o or 1
-    local questIndex, questTotal = self:QuestPosition()
-    self.previousButton:SetEnabled(questTotal > 0 and (questIndex == nil or questIndex > 1))
-    self.followingButton:SetEnabled(questTotal > 0 and (questIndex == nil or questIndex < questTotal))
     if self.mapPicker and self.mapPicker:IsShown() then
         self:RenderMapPicker()
     end
