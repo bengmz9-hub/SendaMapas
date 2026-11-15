@@ -34,8 +34,8 @@ No se instala nada automáticamente: estos pasos los haces tú.
 - `/smapas auto on` · `/smapas auto off`: seguir o no el mapa actual al cambiar de zona.
 - `/smapas filtros` · `/smapas opciones`: ventana de opciones, con una pestaña por tipo de opción (Panel,
   Seguimiento, Flecha, Mapa (M), Minimapa, Filtros) y la de **Aspecto**.
-- `/smapas aspecto <nombre>`: cambia el aspecto del panel (`clasico`, `agy-a`, `agy-b`, `agy-c`, `fable-a`,
-  `fable-b`, `fable-c`); sin nombre lista los disponibles.
+- `/smapas aspecto <nombre>`: cambia el aspecto del panel (`clasico`, `bronce`, `codice`, `expedicion`, `bitacora`,
+  `estandarte`, `tactico`); sin nombre lista los disponibles.
 - `/smapas intensidad 1|2|3`: intensidad del color de las marcas (1 normal, 2 intensa por defecto, 3 máxima).
 - `/smapas minimapa tamano <50-200>`: tamaño de los símbolos del minimapa en porcentaje (100 por defecto).
 - `/smapas diario`: lista completa del mapa, detalle y cadena de la misión elegida.
@@ -87,8 +87,8 @@ No se instala nada automáticamente: estos pasos los haces tú.
 - **Aspecto** (opciones, pestaña **Aspecto**, o `/smapas aspecto`): siete aspectos entre los que elige cada
   jugador, y se cambia en vivo sin recargar. Afecta al panel, a la lista de mapas y a la ventana de opciones
   (colores, marco y estructura de las misiones). **Clásico** es el de antes; los otros seis son diseños nuevos:
-  AGY *Bastión de Hierro y Bronce*, *Códice de Dalaran* y *Cuaderno de Expedición*; Fable *Bitácora* (el que
-  se usa por defecto), *Estandarte* y *Táctico*. Los colores salen exactamente de las maquetas de diseño
+  *Bastión de Hierro y Bronce*, *Códice de Dalaran*, *Cuaderno de Expedición*, *Bitácora* (el que se usa por
+  defecto), *Estandarte* y *Táctico*. Los colores salen exactamente de las maquetas de diseño
   (`generar_aspectos.py` los lee de ellas y escribe `Skins.lua`).
 - **Cada aspecto tiene su propia estructura de misiones** (`Rows.lua` y `Rows_*.lua`), no solo otros colores:
   *Bastión de Hierro y Bronce*: barra lateral de color del estado, etiqueta del estado y caja de información

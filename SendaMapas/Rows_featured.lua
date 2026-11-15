@@ -1,4 +1,4 @@
--- Row layout "featured" (skin agy-c, «Cuaderno de Expedición»; mockup disenos/agy/panel_agy_c.html).
+-- Row layout "featured" (skin expedicion, «Cuaderno de Expedición»; mockup disenos/agy/panel_agy_c.html).
 -- The FIRST row is a featured card: "Misión N" and the state chip on one line with the level data at the
 -- right, a thin rule, the name in the large font, the instruction (without the level data, already above)
 -- and, when open, the objectives as progress bars (label left, have/need right, a 3 px bar underneath).

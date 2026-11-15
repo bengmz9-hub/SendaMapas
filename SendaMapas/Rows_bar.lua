@@ -1,4 +1,4 @@
--- Row layout "bar" (skin agy-a, «Bastión de Hierro y Bronce»; mockup disenos/agy/panel_agy_a.html).
+-- Row layout "bar" (skin bronce, «Bastión de Hierro y Bronce»; mockup disenos/agy/panel_agy_a.html).
 -- Each quest is a bordered card: a 4 px bar in the state color on the left edge, then on one line the
 -- number, a small state chip (the word in a tinted, outlined box) and the name with its tags; under it
 -- the instruction (level data in a quieter tone, coordinates in their own color); when the quest is

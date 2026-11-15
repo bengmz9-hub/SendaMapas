@@ -1,4 +1,4 @@
--- Row layout "rail" (skin fable-a, «Bitácora»; mockup disenos/fable/panel_fable_a.html).
+-- Row layout "rail" (skin bitacora, «Bitácora»; mockup disenos/fable/panel_fable_a.html).
 -- A rail of numbered nodes runs down the left: each quest has a 20 x 18 square in its state color with
 -- its number, and a thin line joins the squares. The text is one column with a fixed left edge:
 --   first row : state word + level data (small) / name (large) / what to do (body size)

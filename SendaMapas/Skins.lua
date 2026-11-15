@@ -2,8 +2,8 @@
 -- Colors are {r, g, b, a} in 0..1. Roles are the same in every skin (see COMMON_ROLES in the generator).
 local _, ns = ...
 ns.Skins = {
-  default = "fable-a",
-  order = {"clasico", "agy-a", "agy-b", "agy-c", "fable-a", "fable-b", "fable-c"},
+  default = "bitacora",
+  order = {"clasico", "bronce", "codice", "expedicion", "bitacora", "estandarte", "tactico"},
   list = {
   ["clasico"] = {
     name = "Clásico (el de antes)", who = "Senda Mapas", frame = "thin", rows = "classic", info = "plain",
@@ -50,8 +50,8 @@ ns.Skins = {
       maz = {0.9333,0.6039,0.5725,1},
     },
   },
-  ["agy-a"] = {
-    name = "Bastión de Hierro y Bronce", who = "AGY", frame = "corners", rows = "bar", info = "inset",
+  ["bronce"] = {
+    name = "Bastión de Hierro y Bronce", who = "Senda Mapas", frame = "corners", rows = "bar", info = "inset",
     c = {
       panel = {0.0706,0.0784,0.0941,0.94},
       header = {0.1137,0.0941,0.0706,1},
@@ -95,8 +95,8 @@ ns.Skins = {
       maz = {0.9294,0.4706,0.4196,1},
     },
   },
-  ["agy-b"] = {
-    name = "Códice de Dalaran", who = "AGY", frame = "corners", rows = "pill", info = "inset",
+  ["codice"] = {
+    name = "Códice de Dalaran", who = "Senda Mapas", frame = "corners", rows = "pill", info = "inset",
     c = {
       panel = {0.0431,0.0588,0.0941,0.95},
       header = {0.0706,0.102,0.1686,1},
@@ -140,8 +140,8 @@ ns.Skins = {
       maz = {0.949,0.4745,0.4275,1},
     },
   },
-  ["agy-c"] = {
-    name = "Cuaderno de Expedición", who = "AGY", frame = "corners", rows = "featured", info = "bars",
+  ["expedicion"] = {
+    name = "Cuaderno de Expedición", who = "Senda Mapas", frame = "corners", rows = "featured", info = "bars",
     c = {
       panel = {0.1098,0.0863,0.0706,0.95},
       header = {0.1686,0.1294,0.098,1},
@@ -185,8 +185,8 @@ ns.Skins = {
       maz = {0.9294,0.4706,0.4196,1},
     },
   },
-  ["fable-a"] = {
-    name = "Bitácora", who = "Fable", frame = "thin", rows = "rail", info = "inset",
+  ["bitacora"] = {
+    name = "Bitácora", who = "Senda Mapas", frame = "thin", rows = "rail", info = "inset",
     c = {
       panel = {0.0784,0.0941,0.1137,0.93},
       header = {0.1176,0.1451,0.1765,1},
@@ -230,8 +230,8 @@ ns.Skins = {
       maz = {0.8784,0.3373,0.3098,1},
     },
   },
-  ["fable-b"] = {
-    name = "Estandarte", who = "Fable", frame = "double", rows = "card", info = "parchment",
+  ["estandarte"] = {
+    name = "Estandarte", who = "Senda Mapas", frame = "double", rows = "card", info = "parchment",
     c = {
       panel = {0.1647,0.102,0.0706,0.95},
       header = {0.1255,0.0745,0.0471,1},
@@ -275,8 +275,8 @@ ns.Skins = {
       maz = {0.8784,0.3373,0.3098,1},
     },
   },
-  ["fable-c"] = {
-    name = "Táctico", who = "Fable", frame = "none", rows = "table", info = "bars",
+  ["tactico"] = {
+    name = "Táctico", who = "Senda Mapas", frame = "none", rows = "table", info = "bars",
     c = {
       panel = {0.0314,0.0431,0.0549,0.8},
       header = {0,0,0,0.38},
@@ -284,13 +284,13 @@ ns.Skins = {
       border = {1,1,1,0.12},
       divider = {1,1,1,0.12},
       headerText = {0.2392,0.8784,0.7843,1},
-      title = {0.949,0.9608,0.9686,1},
-      instruction = {0.949,0.9608,0.9686,1},
-      muted = {0.6627,0.702,0.7333,1},
-      footer = {0.6627,0.702,0.7333,1},
+      title = {0.8235,0.851,0.8118,1},
+      instruction = {0.8235,0.851,0.8118,1},
+      muted = {0.5725,0.6196,0.5922,1},
+      footer = {0.5725,0.6196,0.5922,1},
       button = {1,1,1,0.09},
       buttonBorder = {1,1,1,0.12},
-      buttonText = {0.949,0.9608,0.9686,1},
+      buttonText = {0.8235,0.851,0.8118,1},
       hover = {1,1,1,0.2},
       primary = {0.2392,0.8784,0.7843,1},
       primaryBorder = {0.2392,0.8784,0.7843,1},
@@ -300,7 +300,7 @@ ns.Skins = {
       selBorder = {0.2392,0.8784,0.7843,1},
       featuredBg = {0.2392,0.8784,0.7843,0.12},
       detailBg = {0.051,0.0667,0.0784,1},
-      detailText = {0.949,0.9608,0.9686,1},
+      detailText = {0.8235,0.851,0.8118,1},
       detailOk = {0.7137,0.9412,0.2353,1},
       detailTurn = {0.2392,0.8784,0.7843,1},
       coords = {0.2392,0.7216,1,1},

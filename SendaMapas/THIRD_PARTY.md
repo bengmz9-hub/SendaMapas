@@ -44,4 +44,4 @@ SendaMapas no depende de otros addons: no declara dependencias y no incluye ning
 
 ## Imágenes y aspectos
 
-Las imágenes de `Media/Arrow_*.tga` (flechas Lance, Solar, Aether, Talon, Pulse y Plume) y los seis aspectos de `Skins.lua` (colores, marcos y estructuras) son diseños originales hechos para este proyecto por dos agentes de diseño (AGY y Fable) a partir de una especificación propia, sin recursos de terceros; las imágenes se generan con scripts de Python de la biblioteca estándar. La flecha «Blizzard» usa la textura del propio juego (`Interface\\Minimap\\ROTATING-MINIMAPARROW`), que no se incluye.
+Las imágenes de `Media/Arrow_*.tga` (flechas Lance, Solar, Aether, Talon, Pulse y Plume) y los seis aspectos de `Skins.lua` (colores, marcos y estructuras) son diseños originales hechos para este proyecto a partir de una especificación propia, sin recursos de terceros; las imágenes se generan con scripts de Python de la biblioteca estándar. La flecha «Blizzard» usa la textura del propio juego (`Interface\\Minimap\\ROTATING-MINIMAPARROW`), que no se incluye.

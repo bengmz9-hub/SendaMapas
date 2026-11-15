@@ -1,4 +1,4 @@
--- Row layout "table" (skin fable-c, «Táctico»; mockup disenos/fable/panel_fable_c.html).
+-- Row layout "table" (skin tactico, «Táctico»; mockup disenos/fable/panel_fable_c.html).
 -- Borderless, compact table rows: a 3 px strip in the state color on the left edge, the number right
 -- aligned in a narrow column, then the name. Columns appear as the row gets wider:
 --   row width < 560  : the state word leads the name, in its color; the level data leads the action line

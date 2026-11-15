@@ -1,4 +1,4 @@
--- Row layout "pill" (skin agy-b, «Códice de Dalaran»; mockup disenos/agy/panel_agy_b.html).
+-- Row layout "pill" (skin codice, «Códice de Dalaran»; mockup disenos/agy/panel_agy_b.html).
 -- Each quest is a bordered row with a fixed left column of 58 px (the "spine") that holds the number
 -- ("#1") and, under it, the state as a small pill; a 1 px line closes the spine. Everything else (name
 -- and tags, instruction, the information box) lives in the right column, so the names start at the

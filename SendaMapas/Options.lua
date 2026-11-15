@@ -103,7 +103,7 @@ local function buildSkin(self, tab)
         b.label:SetJustifyH("LEFT")
         b.who = b:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
         b.who:SetPoint("TOPLEFT", b, "TOPLEFT", 10, -26)
-        b.who:SetText(skin.who == "Senda Mapas" and "El aspecto de siempre" or ("Diseño de " .. skin.who))
+        b.who:SetText(({classic = "El aspecto de siempre", bar = "Barra lateral de color", pill = "Columna con número y estado", featured = "Primera misión destacada", rail = "Carril de nodos numerados", card = "Tarjetas con banda de color", table = "Filas de tabla compactas"})[skin.rows] or "")
         b.swatches = {}
         local roles = {"panel", "header", "accent", "rec", "cur", "ent"}
         for swatch, role in ipairs(roles) do

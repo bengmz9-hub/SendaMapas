@@ -1,4 +1,4 @@
--- Row layout "card" (skin fable-b, «Estandarte»; mockup disenos/fable/panel_fable_b.html).
+-- Row layout "card" (skin estandarte, «Estandarte»; mockup disenos/fable/panel_fable_b.html).
 -- Each quest is a card with a 1 px gold border and a 5 px band in the state color on its left edge.
 -- Head line: a small plate with the number, the state word (small capitals, state color) and, at the
 -- right, the level data and a "+" / "-" sign. Then the name and what to do (its leading word in gold).
