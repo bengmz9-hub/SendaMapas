@@ -1,5 +1,5 @@
 -- Options window: one tab per kind of option, a column of tabs on the left, no scrolling.
--- Tabs: Panel, Seguimiento, Flecha, Mapa (M), Minimapa, Filtros. Every switch has a slash twin.
+-- Tabs: Panel, Seguimiento (con la entrega automática), Flecha, Mapa (M), Minimapa, Filtros. Every switch has a slash twin.
 local _, ns = ...
 local ui = ns.ui
 local button, text, place, bounded = ui.button, ui.text, ui.place, ui.bounded
@@ -136,6 +136,11 @@ local function buildFollow(self, tab)
         .. "el destino con el botón Marcar destino.")
     note(tab, -222, "Ocultar terminadas: quita de la lista, del mapa y de la flecha las misiones que ya tienes completas "
         .. "pero no entregadas.")
+    addToggle(tab, "autoTurnin", -270, "Entregar misiones automáticamente",
+        function() return ns.saved.autoTurnin ~= false and "Sí" or "No" end,
+        function() ns:SetAutoTurnin(ns.saved.autoTurnin == false, true) end)
+    note(tab, -312, "Entregar: al hablar con quien recibe la misión se entrega sola. Nunca acepta misiones nuevas, "
+        .. "Shift la pausa y, si hay varias recompensas para elegir, la ventana queda abierta.")
 end
 
 local function buildArrow(self, tab)
@@ -188,6 +193,12 @@ local function buildMap(self, tab)
     note(tab, -168, "Destino: la estrella con halo y la franja de arriba del mapa. Símbolos: Solo «?» (misiones terminadas "
         .. "sin entregar), Todo (también «!» para recoger y los objetivos) o Ninguno.")
     note(tab, -226, "Intensidad: Normal, Intensa (por defecto) o Máxima. Afecta a las marcas del mapa y del minimapa.")
+    addToggle(tab, "mapZones", -268, "Malla en la zona de los enemigos",
+        function() return ns.saved.mapZones ~= false and "Sí" or "No" end,
+        function() ns:SetMapExtra("mapZones", ns.saved.mapZones == false, true) end)
+    addToggle(tab, "mapRoute", -306, "Línea de ruta con flechas al destino",
+        function() return ns.saved.mapRoute ~= false and "Sí" or "No" end,
+        function() ns:SetMapExtra("mapRoute", ns.saved.mapRoute == false, true) end)
 end
 
 local function buildMinimap(self, tab)

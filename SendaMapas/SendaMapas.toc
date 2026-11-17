@@ -35,6 +35,7 @@ Rows_rail.lua
 Rows_card.lua
 Rows_table.lua
 Core.lua
+Errores.lua
 Filters.lua
 Modules.lua
 MapResolver.lua
@@ -45,4 +46,5 @@ MinimapPins.lua
 UI.lua
 HUD.lua
 Options.lua
+AutoTurnin.lua
 SelfTest.lua

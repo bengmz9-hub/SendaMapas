@@ -8,16 +8,22 @@
 local _, ns = ...
 
 local MAX_PINS = 250
+local MEDIA = "Interface\\AddOns\\" .. (ns.name or "SendaMapas") .. "\\Media\\"
 local ICON = {
-    available = "Interface\\GossipFrame\\AvailableQuestIcon",
-    turnin = "Interface\\GossipFrame\\ActiveQuestIcon",
-    kill = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8",
-    collect = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_3",
+    available = MEDIA .. "Icon_Available",
+    turnin = MEDIA .. "Icon_Turnin",
+    kill = MEDIA .. "Icon_Kill",
+    collect = MEDIA .. "Icon_Collect",
 }
+local DEST_ICON = MEDIA .. "Icon_Dest"
+local DOT_ICON = MEDIA .. "Icon_Dot"
+local MESH = MEDIA .. "Zone_Mesh"
+local ROUTE_ARROW = MEDIA .. "Route_Arrow"
+ns.mediaIcons = {icon = ICON, dest = DEST_ICON, dot = DOT_ICON, mesh = MESH}
 local LABEL = {available = "Recoger", turnin = "Entregar", kill = "Objetivo: matar", collect = "Objetivo: recoger/usar"}
 
--- Intensity of the marks: 1 normal, 2 intense (default), 3 maximum. Stronger colors come from extra
--- layers of the same icon and glow with additive blending; the shapes stay the same.
+-- Intensity of the marks: 1 normal, 2 intense (default), 3 maximum. It colors the glow of the
+-- destination and its banner; the icons are drawn once, sharp, with no extra layers on top.
 local GLOW_COLOR = {{1, 0.85, 0.10}, {1, 0.72, 0.0}, {1, 0.55, 0.0}}
 function ns:MarkIntensity()
     local value = tonumber(self.saved and self.saved.markIntensity)
@@ -37,14 +43,7 @@ end
 
 -- Styles one mark. `base` is its main texture, `icon` the path; glow/glow2 are optional layers.
 function ns.StyleMark(pin, base, icon, level)
-    if not rawget(pin, "boost") then
-        pin.boost = pin:CreateTexture(nil, "OVERLAY")
-        pin.boost:SetAllPoints(base)
-        pin.boost:SetBlendMode("ADD")
-    end
-    pin.boost:SetTexture(icon)
-    pin.boost:SetAlpha(level == 1 and 0 or (level == 2 and 0.5 or 0.9))
-    pin.boost:SetShown(level > 1)
+    -- (no duplicated layer over the icon: stacking the same image blurs it)
     local glow, glow2 = rawget(pin, "glow"), rawget(pin, "glow2")
     if glow then
         local c = GLOW_COLOR[level]
@@ -92,9 +91,10 @@ end
 
 local function newPin(index)
     local pin = CreateFrame("Button", nil, canvas())
-    pin:SetSize(22, 22)
+    pin:SetSize(16, 16)
     pin.glow = pin:CreateTexture(nil, "BACKGROUND")
-    pin.glow:SetAllPoints(pin)
+    pin.glow:SetPoint("CENTER", pin, "CENTER", 0, 0)
+    pin.glow:SetSize(30, 30)
     pin.glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
     pin.glow:SetBlendMode("ADD")
     pin.glow:SetVertexColor(1, 0.9, 0.2)
@@ -134,9 +134,34 @@ local function place(pin, parent, x, y, scale)
     return true
 end
 
+local zoneHolder
+local zoneTextures = {}
+ns.zoneTextures = zoneTextures
+ns.zonesShown = 0
+
+local function hideZones()
+    for _, tex in ipairs(zoneTextures) do tex:Hide() end
+    ns.zonesShown = 0
+end
+
+-- Route: straight line from the player to the destination with small arrows along it.
+local routeHolder, routeShadow, routeLine
+local routeArrows = {}
+ns.routeArrows = routeArrows
+ns.routeShown = false
+
+local function hideRoute()
+    if routeShadow then routeShadow:Hide() end
+    if routeLine then routeLine:Hide() end
+    for _, tex in ipairs(routeArrows) do tex:Hide() end
+    ns.routeShown = false
+end
+
 local function hideAll()
     for _, pin in ipairs(pool) do pin:Hide() end
     ns.mapPinsShown = 0
+    hideZones()
+    hideRoute()
 end
 
 -- Pins to draw on map `mapID`: list of {kind, quest, x, y, label}.
@@ -183,6 +208,149 @@ function ns:CollectMapPins(mapID, zone)
     return list
 end
 
+-- Areas where the unfinished objectives are (a gold mesh for kill and collect objectives), like the quest
+-- area of Blizzard's tracker. Always for the quest being followed; for every quest in the log when the
+-- pins are in "todo" mode. Each spawn point gets a soft disc of mesh; discs that overlap make one zone.
+local ZONE_COLOR = {kill = {1, 0.82, 0.25}, collect = {1, 0.82, 0.25}}   -- gold, like the area of the default quest tracker
+local MAX_ZONES = 300
+local ZONE_SIZE = 0.05        -- disc diameter, as a fraction of the map width
+
+function ns:CollectZoneAreas(mapID)
+    local list, seen = {}, {}
+    local everything = self.saved.mapPinMode == "todo"
+    for id in pairs(self.log or {}) do
+        local q = self:Quest(id)
+        if q and (everything or id == self.markerQuest) and self:EntryState(id) == "active" then
+            local spots = self:ObjectiveSpotList(q)
+            if spots then
+                local kindOf = {}
+                for _, ob in ipairs(self:UnfinishedObjectives(q) or {}) do kindOf[ob.n or ""] = ob.k end
+                for _, spot in ipairs(spots) do
+                    if spot.map == mapID then
+                        local kind = kindOf[spot.name] == "kill" and "kill" or "collect"
+                        local key = kind .. string.format(":%.3f,%.3f", spot.x, spot.y)
+                        if not seen[key] then
+                            seen[key] = true
+                            list[#list+1] = {kind = kind, x = spot.x, y = spot.y}
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return list
+end
+
+local function drawZones(parent, mapID)
+    local ok, list = pcall(ns.CollectZoneAreas, ns, mapID)
+    if not ok then hideZones(); return end
+    local width, height = parent:GetWidth(), parent:GetHeight()
+    if not width or not height or width <= 1 or height <= 1 then hideZones(); return end
+    if not zoneHolder or zoneHolder:GetParent() ~= parent then
+        zoneHolder = CreateFrame("Frame", nil, parent)
+        zoneHolder:SetAllPoints(parent)
+    end
+    zoneHolder:SetFrameLevel(8000)
+    zoneHolder:Show()
+    local size, used = ZONE_SIZE * width, 0
+    for _, item in ipairs(list) do
+        if used >= MAX_ZONES then break end
+        used = used + 1
+        local tex = zoneTextures[used]
+        if not tex then
+            tex = zoneHolder:CreateTexture(nil, "ARTWORK")
+            tex:SetTexture(MESH)
+            zoneTextures[used] = tex
+        end
+        local color = ZONE_COLOR[item.kind]
+        tex.kind = item.kind
+        tex:SetVertexColor(color[1], color[2], color[3])
+        tex:SetSize(size, size)
+        tex:ClearAllPoints()
+        tex:SetPoint("CENTER", parent, "TOPLEFT", width * item.x, -height * item.y)
+        tex:Show()
+    end
+    for index = used + 1, #zoneTextures do zoneTextures[index]:Hide() end
+    ns.zonesShown = used
+end
+
+local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
+
+-- Draws a line with small arrows from (sx, sy) to (ex, ey). Offsets are relative to `anchorPoint` of
+-- `anchorFrame` (x right, y up). `unit` scales thickness and arrow size. Returns false when nothing was drawn.
+function ns.DrawRoute(holder, anchorFrame, anchorPoint, state, sx, sy, ex, ey, unit, spacing, arrowSize, thickness, maxArrows)
+    if type(holder.CreateLine) ~= "function" then return false end
+    local dx, dy = ex - sx, ey - sy
+    local length = math.sqrt(dx * dx + dy * dy)
+    if length < 2 * arrowSize * unit then return false end
+    if not state.shadow then
+        local shadow, line = holder:CreateLine(nil, "ARTWORK"), holder:CreateLine(nil, "OVERLAY")
+        if not shadow or not line then return false end
+        shadow:SetColorTexture(0.1, 0.07, 0.02, 0.7)
+        line:SetColorTexture(1, 0.82, 0.2, 0.95)
+        state.shadow, state.line = shadow, line
+    end
+    state.shadow:SetThickness((thickness + 2) * unit)
+    state.line:SetThickness(thickness * unit)
+    state.shadow:SetStartPoint(anchorPoint, anchorFrame, sx, sy); state.shadow:SetEndPoint(anchorPoint, anchorFrame, ex, ey)
+    state.line:SetStartPoint(anchorPoint, anchorFrame, sx, sy); state.line:SetEndPoint(anchorPoint, anchorFrame, ex, ey)
+    state.shadow:Show(); state.line:Show()
+    local rotation = -atan2(dx, dy)               -- the texture points up; rotation is counter-clockwise
+    local step, used = spacing * unit, 0
+    local t = step * 0.6
+    while t < length - arrowSize * unit * 0.6 and used < maxArrows do
+        used = used + 1
+        local tex = state.arrows[used]
+        if not tex then
+            tex = holder:CreateTexture(nil, "OVERLAY")
+            tex:SetTexture(ROUTE_ARROW)
+            state.arrows[used] = tex
+        end
+        tex:SetSize(arrowSize * unit, arrowSize * unit)
+        tex:SetRotation(rotation)
+        tex:ClearAllPoints()
+        tex:SetPoint("CENTER", anchorFrame, anchorPoint, sx + dx * t / length, sy + dy * t / length)
+        tex:Show()
+        t = t + step
+    end
+    for index = used + 1, #state.arrows do state.arrows[index]:Hide() end
+    return true
+end
+
+local routeState = {arrows = routeArrows}
+
+function ns:RefreshRoute()
+    local dest = self.dest
+    if not self.saved or self.saved.mapRoute == false or not dest
+        or not (WorldMapFrame and WorldMapFrame:IsShown()) then hideRoute(); return end
+    local parent, mapID = canvas(), displayedMap()
+    if not parent or not mapID or dest.map ~= mapID then hideRoute(); return end
+    local player = self.Call(C_Map and C_Map.GetPlayerMapPosition, mapID, "player")
+    local px, py
+    if player and player.GetXY then px, py = player:GetXY() end
+    local width, height = parent:GetWidth(), parent:GetHeight()
+    if type(px) ~= "number" or type(py) ~= "number" or (px == 0 and py == 0)
+        or not width or not height or width <= 1 or height <= 1 then hideRoute(); return end
+    local unit = 1
+    if parent.GetScale then
+        local value = parent:GetScale()
+        if type(value) == "number" and value > 0 then unit = 1 / value end
+    end
+    if not routeHolder or routeHolder:GetParent() ~= parent then
+        routeHolder = CreateFrame("Frame", nil, parent)
+        routeHolder:SetAllPoints(parent)
+        routeState.shadow, routeState.line = nil, nil
+        for index in ipairs(routeArrows) do routeArrows[index] = nil end
+    end
+    routeHolder:SetFrameLevel(8500)
+    routeHolder:Show()
+    local ok, drawn = pcall(ns.DrawRoute, routeHolder, parent, "TOPLEFT", routeState,
+        px * width, -py * height, dest.x * width, -dest.y * height, unit, 46, 18, 3, 60)
+    routeShadow, routeLine = routeState.shadow, routeState.line
+    ns.routeShown = ok and drawn and true or false
+    if not ns.routeShown then hideRoute() end
+end
+
 function ns:RefreshQuestPins()
     if not self.saved or self.saved.mapPins == false then hideAll(); return end
     if not (WorldMapFrame and WorldMapFrame:IsShown()) then hideAll(); return end
@@ -195,6 +363,7 @@ function ns:RefreshQuestPins()
     end
     self:ReadLog()
     self.context = self:Context()
+    if self.saved.mapZones ~= false then drawZones(parent, mapID) else hideZones() end
     local ok, list = pcall(self.CollectMapPins, self, mapID, zone)
     if not ok then hideAll(); return end
     local scale = 1
@@ -233,23 +402,23 @@ local destDots = {}
 
 local function newDestPin(parent)
     local pin = CreateFrame("Frame", nil, parent)
-    pin:SetSize(40, 40)
+    pin:SetSize(30, 30)
     pin.glow = pin:CreateTexture(nil, "BACKGROUND")
-    pin.glow:SetSize(84, 84)
+    pin.glow:SetSize(58, 58)
     pin.glow:SetPoint("CENTER", pin, "CENTER", 0, 0)
     pin.glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
     pin.glow:SetBlendMode("ADD")
     pin.glow:SetVertexColor(1, 0.85, 0.1)
     pin.glow2 = pin:CreateTexture(nil, "BACKGROUND")
-    pin.glow2:SetSize(120, 120)
+    pin.glow2:SetSize(84, 84)
     pin.glow2:SetPoint("CENTER", pin, "CENTER", 0, 0)
     pin.glow2:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
     pin.glow2:SetBlendMode("ADD")
     pin.glow2:SetVertexColor(1, 0.4, 0.0)
     pin.star = pin:CreateTexture(nil, "ARTWORK")
-    pin.star:SetSize(34, 34)
+    pin.star:SetSize(26, 26)
     pin.star:SetPoint("CENTER", pin, "CENTER", 0, 0)
-    pin.star:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_1")
+    pin.star:SetTexture(DEST_ICON)
     pin.label = pin:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     pin.label:SetPoint("TOP", pin, "BOTTOM", 0, -2)
     -- Pulse: purely cosmetic, skipped when animations are not available.
@@ -269,14 +438,13 @@ end
 
 local function newDot(index, parent)
     local dot = CreateFrame("Frame", nil, parent)
-    dot:SetSize(16, 16)
+    dot:SetSize(12, 12)
     dot.icon = dot:CreateTexture(nil, "ARTWORK")
     dot.icon:SetAllPoints(dot)
-    dot.icon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcon_1")
-    dot.icon:SetVertexColor(1, 0.85, 0.1)
+    dot.icon:SetTexture(DOT_ICON)
     dot.glow = dot:CreateTexture(nil, "BACKGROUND")
     dot.glow:SetPoint("CENTER", dot, "CENTER", 0, 0)
-    dot.glow:SetSize(34, 34)
+    dot.glow:SetSize(22, 22)
     dot.glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
     dot.glow:SetBlendMode("ADD")
     dot.glow:SetVertexColor(1, 0.7, 0.0)
@@ -360,7 +528,7 @@ function ns:RefreshDestination()
     end
     destPin = destPin or newDestPin(parent)
     local level = self:MarkIntensity()
-    if destPin.styleLevel ~= level then ns.StyleMark(destPin, destPin.star, "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1", level) end
+    if destPin.styleLevel ~= level then ns.StyleMark(destPin, destPin.star, DEST_ICON, level) end
     destPin.label:SetText(dest.title or "")
     destPin.label:SetTextColor(1, level == 1 and 0.82 or 0.9, level == 1 and 0.0 or 0.2)
     place(destPin, parent, dest.x, dest.y, scale)
@@ -382,6 +550,18 @@ function ns:RefreshDestination()
     ns.destUi = {pin = destPin, banner = destBanner, dots = destDots}
 end
 
+-- Mesh over the enemy areas of the objectives (key mapZones) and route line to the destination (key mapRoute).
+function ns:SetMapExtra(key, enabled, quiet)
+    self.saved[key] = enabled and true or false
+    if not quiet then
+        self:Print((key == "mapZones" and "Malla de zonas de enemigos: " or "Línea de ruta al destino: ") ..
+            (self.saved[key] and "activada." or "desactivada."))
+    end
+    self:RefreshMapPins()
+    if self.RefreshMinimapPins then self:RefreshMinimapPins() end
+    if self.RenderFilterOptions then self:RenderFilterOptions() end
+end
+
 function ns:SetMapDestination(enabled, quiet)
     self.saved.mapDestination = enabled and true or false
     if not quiet then
@@ -399,6 +579,7 @@ function ns:RefreshMapPins()
     if not (WorldMapFrame and WorldMapFrame:IsShown()) then hideAll(); hideDestination(); return end
     self:RefreshQuestPins()
     self:RefreshDestination()
+    self:RefreshRoute()
 end
 
 function ns:SetMapPinMode(mode, quiet)
@@ -443,6 +624,16 @@ function ns:HookWorldMap()
     end
     if WorldMapFrame:IsShown() then refresh() end
 end
+
+-- The player moves while the map is open: keep the route start on the player.
+local routeTimer = CreateFrame("Frame")
+routeTimer.elapsed = 0
+routeTimer:SetScript("OnUpdate", function(self, elapsed)
+    self.elapsed = self.elapsed + (elapsed or 0)
+    if self.elapsed < 0.5 then return end
+    self.elapsed = 0
+    if ns.saved and ns.dest and WorldMapFrame and WorldMapFrame:IsShown() then ns:RefreshRoute() end
+end)
 
 local watcher = CreateFrame("Frame")
 for _, event in ipairs({"ADDON_LOADED", "PLAYER_ENTERING_WORLD"}) do pcall(watcher.RegisterEvent, watcher, event) end

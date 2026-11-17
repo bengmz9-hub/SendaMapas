@@ -286,6 +286,7 @@ function ns:Initialize()
     for _, key in ipairs({"skipped", "mapSelections", "filters", "turnedIn", "expanded"}) do
         if type(self.saved[key]) ~= "table" then self.saved[key] = {} end
     end
+    if self.InitErrors then self:InitErrors() end
     self.Filters.Normalize(self.saved.filters)
     if self.saved.autoSelect == nil then self.saved.autoSelect = true end
     if self.saved.autoNavigate == nil then self.saved.autoNavigate = true end
@@ -358,6 +359,8 @@ SlashCmdList.SENDAMAPAS = function(message)
     elseif command:match("^fondo %d+$") then ns:SetBackgroundOpacity(command:match("^fondo (%d+)$"))
     elseif command == "restaurar" then ns:RestoreChoices()
     elseif command == "limpiar" then ns:ClearWaypoint()
+    elseif command == "errores" then ns:PrintErrors()
+    elseif command == "errores borrar" then ns:ClearErrors()
     elseif command == "aspecto" then ns:Print("Aspecto actual: " .. ns:SkinData().name .. ". Opciones: " .. table.concat(ns.Skins.order, ", ") .. ".")
     elseif command:match("^aspecto %S+$") then ns:SetSkin(command:match("^aspecto (%S+)$"))
     elseif command == "abrir" or command == "abrir todas" then ns:SetOpenAll(true)

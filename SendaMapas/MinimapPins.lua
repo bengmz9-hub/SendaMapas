@@ -8,18 +8,22 @@ local _, ns = ...
 local OUTDOOR = {[0] = 466 + 2/3, 400, 333 + 1/3, 266 + 2/3, 200, 133 + 1/3}   -- diameters in yards
 local INDOOR = {[0] = 300, 240, 180, 120, 80, 50}
 local EDGE = 0.9           -- fraction of the radius where pins stop and slide to the border
-local SIZE = {dest = 34, dot = 18, turnin = 30, available = 30, kill = 24, collect = 24}
+local SIZE = {dest = 24, dot = 11, turnin = 18, available = 18, kill = 16, collect = 16}
+local MEDIA = "Interface\\AddOns\\" .. (ns.name or "SendaMapas") .. "\\Media\\"
 local ICON = {
-    dest = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1",
-    dot = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_1",
-    turnin = "Interface\\GossipFrame\\ActiveQuestIcon",
-    available = "Interface\\GossipFrame\\AvailableQuestIcon",
-    kill = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_8",
-    collect = "Interface\\TargetingFrame\\UI-RaidTargetingIcon_3",
+    dest = MEDIA .. "Icon_Dest",
+    dot = MEDIA .. "Icon_Dot",
+    turnin = MEDIA .. "Icon_Turnin",
+    available = MEDIA .. "Icon_Available",
+    kill = MEDIA .. "Icon_Kill",
+    collect = MEDIA .. "Icon_Collect",
 }
 
 local pool, targets = {}, {}
 ns.minimapPool = pool
+local routeHolder
+local routeState = {arrows = {}}
+ns.minimapRoute = routeState
 
 -- Size of the symbols, in percent of the default (50 to 200).
 function ns:MinimapScale()
@@ -62,13 +66,13 @@ local function newPin(index)
     pin:SetSize(32, 32)
     pin.glow = pin:CreateTexture(nil, "BACKGROUND")
     pin.glow:SetPoint("CENTER", pin, "CENTER", 0, 0)
-    pin.glow:SetSize(64, 64)
+    pin.glow:SetSize(44, 44)
     pin.glow:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
     pin.glow:SetBlendMode("ADD")
     pin.glow:SetVertexColor(1, 0.85, 0.1)
     pin.glow2 = pin:CreateTexture(nil, "BACKGROUND")
     pin.glow2:SetPoint("CENTER", pin, "CENTER", 0, 0)
-    pin.glow2:SetSize(90, 90)
+    pin.glow2:SetSize(62, 62)
     pin.glow2:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
     pin.glow2:SetBlendMode("ADD")
     pin.glow2:SetVertexColor(1, 0.4, 0.0)
@@ -134,7 +138,7 @@ function ns:PlaceMinimapPins()
     local radius, rotate, halfW, halfH = state.radius, state.rotate, state.halfW, state.halfH
     local facing = self.Call(GetPlayerFacing)
     if rotate and type(facing) ~= "number" then hideAll(); return end
-    local used = 0
+    local used, destX, destY = 0, nil, nil
     for _, target in ipairs(targets) do
         local bearing, distance = target.bearing, target.distance
         if bearing and distance then
@@ -161,6 +165,7 @@ function ns:PlaceMinimapPins()
                 pin:SetFrameLevel((Minimap.GetFrameLevel and Minimap:GetFrameLevel() or 1) + 8 + (target.kind == "dest" and 3 or 0))
                 pin:ClearAllPoints()
                 pin:SetPoint("CENTER", Minimap, "CENTER", rx * halfW, ry * halfH)
+                if target.kind == "dest" and not destX then destX, destY = rx * halfW, ry * halfH end
                 pin.kind, pin.onEdge = target.kind, ratio > 1
                 pin:Show()
             end
@@ -168,6 +173,28 @@ function ns:PlaceMinimapPins()
     end
     for index = used + 1, #pool do pool[index]:Hide() end
     ns.minimapShown = used
+    self:PlaceMinimapRoute(destX, destY)
+end
+
+-- Line with small arrows from the center of the minimap (the player) to the destination star.
+function ns:PlaceMinimapRoute(destX, destY)
+    local drawn = false
+    if destX and self.saved.mapRoute ~= false and Minimap then
+        if not routeHolder then
+            routeHolder = CreateFrame("Frame", nil, Minimap)
+            routeHolder:SetAllPoints(Minimap)
+        end
+        routeHolder:SetFrameLevel((Minimap.GetFrameLevel and Minimap:GetFrameLevel() or 1) + 6)
+        routeHolder:Show()
+        local ok, result = pcall(ns.DrawRoute, routeHolder, Minimap, "CENTER", routeState, 0, 0, destX, destY, 1, 22, 11, 2, 12)
+        drawn = ok and result and true or false
+    end
+    if not drawn then
+        if routeState.shadow then routeState.shadow:Hide() end
+        if routeState.line then routeState.line:Hide() end
+        for _, tex in ipairs(routeState.arrows) do tex:Hide() end
+    end
+    ns.minimapRouteShown = drawn
 end
 
 function ns:UpdateMinimapPins()

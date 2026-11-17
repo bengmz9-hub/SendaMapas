@@ -80,6 +80,7 @@ function ns:LoadMap(zoneId, quiet)
     end
     local data, reason = self:EnsureMap(zoneId)
     if not data then
+        if self.ReportIssue then self:ReportIssue("LoadMap " .. tostring(zoneId), reason) end
         if not self.activeData then self.moduleError = reason end
         if not quiet or not self.activeData then self:Print(reason) end
         if self.Render then self:Render() end

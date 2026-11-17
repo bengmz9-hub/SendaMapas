@@ -61,7 +61,11 @@ No se instala nada automáticamente: estos pasos los haces tú.
   la ventana de opciones, que enseñan cada diseño).
 - `/smapas flecha invertir`: si la flecha propia gira al lado contrario, invierte el giro.
 - `/smapas flecha reiniciar`: recoloca la flecha propia (se mueve arrastrándola).
+- `/smapas autoentregar si` · `autoentregar no` (sin palabra, alterna): entrega sola las misiones terminadas al hablar
+  con el NPC (activada por defecto; para quitarla, `autoentregar no` o el interruptor en Opciones → Seguimiento). Nunca acepta misiones nuevas; Shift la pausa;
+  con varias recompensas para elegir deja la ventana abierta y avisa en el chat.
 - `/smapas test`: diagnóstico de reglas y filtros.
+- `/smapas errores`: lista los últimos errores de Lua del addon (registro propio, máx. 50). Se guardan en el archivo de SavedVariables al hacer `/reload` o salir del juego. `/smapas errores borrar` lo vacía.
 
 ## Uso
 
