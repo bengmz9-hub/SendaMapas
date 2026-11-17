@@ -69,9 +69,34 @@ No se instala nada automáticamente: estos pasos los haces tú.
   con el NPC (activada por defecto; para quitarla, `autoentregar no` o el interruptor en Opciones → Seguimiento). Nunca acepta misiones nuevas; Shift la pausa;
   con varias recompensas para elegir deja la ventana abierta y avisa en el chat.
 - `/smapas test`: diagnóstico de reglas y filtros.
+- `/smapas api`: dice en el chat qué funciones del juego que usa el addon existen en este cliente (una línea
+  por grupo, «sí»/«no»). Sirve para saber, en la primera prueba, qué partes funcionarán.
+- `/smapas diagnostico`: abre la ventana de diagnóstico (ver «Diagnóstico» más abajo).
+- `/smapas texto pequeño|normal|grande`: tamaño del texto del panel (también en Opciones → Panel).
+- `/smapas simbolos on` · `simbolos off`: símbolos junto a la palabra del estado (`[!] Recoger`, `[*] En curso`,
+  `[?] Entregar`, `[v] Entregada`); desactivados por defecto.
+- `/smapas sonido on` · `sonido off`: sonido al completar un objetivo o la misión entera (desactivado por defecto).
+- `/smapas orden progresion` · `orden cercania`: orden de la lista del panel en modo Lista: el de progresión del mapa
+  (por defecto) o por cercanía (ver «Orden por cercanía» más abajo).
 - `/smapas errores`: lista los últimos errores de Lua del addon (registro propio, máx. 50). Se guardan en el archivo de SavedVariables al hacer `/reload` o salir del juego. `/smapas errores borrar` lo vacía.
 
+## Atajos de teclado
+
+En el menú de *Atajos de teclado* del juego aparece la sección **Senda Mapas** (archivo `Bindings.xml`, que el
+juego lee solo de la carpeta del addon) con seis acciones sin tecla asignada: *Mostrar u ocultar el panel*,
+*Misión siguiente*, *Misión anterior*, *Marcar destino*, *Selector de mapas* y *Saltar la misión*. Hacen lo mismo
+que los botones del panel; las teclas las asignas tú.
+
 ## Uso
+
+- **Primera vez**: al entrar por primera vez con un personaje el chat avisa de que la entrega automática está
+  activada (Shift la pausa; `/smapas autoentregar no` la quita) y de que el aspecto y el resto están en
+  `/smapas opciones`.
+- **Tooltip de cada misión del panel**: al pasar el ratón muestra el número de la misión (#id), nivel, nivel
+  mínimo y PX, el estado, dónde se recoge (con coordenadas), dónde se entrega (solo cuando ya está terminada,
+  como en el resto del addon) y sus previas, siguientes y excluyentes con su estado y su mapa.
+  **Alt+clic** en la fila abre su misión previa (la primera que no tengas entregada) o, si no hay, la
+  siguiente, aunque esté en otro mapa: se carga ese mapa y se elige la misión. Clic derecho la salta.
 
 - **Flecha propia**: no necesita ningún otro addon. Apunta respecto a hacia
   dónde mira tu personaje (destino a la derecha, gira a la derecha) y muestra
@@ -85,12 +110,21 @@ No se instala nada automáticamente: estos pasos los haces tú.
   objetivo sin terminar más cercano (matar, recoger, usar); cuando los
   objetivos están hechos, a quien la entrega. Los datos traen hasta 6 puntos
   por zona y objetivo (centros de las zonas donde están, no cada bicho): la
-  flecha lleva al área, no a un monstruo concreto. El 24 % de las misiones
+  flecha lleva al área, no a un monstruo concreto. Parte de las misiones
   con objetivos no tiene posiciones en los datos (marcas de instancia, ítems
-  sin fuente conocida): entonces apunta a la entrega. Los objetivos hechos se
+  sin fuente conocida): entonces no hay flecha y el chat lo dice **una sola vez** por paso
+  («Esta misión no tiene coordenadas de objetivo en los datos…», o «Objetivos completados…» si ya los
+  tienes hechos); la flecha vuelve cuando la misión pasa a entregarse. Los objetivos hechos se
   detectan por el texto del registro de misiones y el nombre del objetivo; si
   tu cliente no está en inglés pueden no coincidir y se mostrarán todos como
   pendientes.
+- **Objetivos dentro de una mazmorra**: cuando los datos indican que el punto de un objetivo es la
+  entrada exterior de una mazmorra (el objetivo está dentro), el destino se llama «Entrada de <mazmorra>
+  (<objetivo>)» y el chat dice «Destino: Entrada de … (el objetivo está dentro)». En el mapa del mundo
+  (marcas en «todo») y en el minimapa se pone un único símbolo de destino en la entrada, con el tooltip
+  «Entrada de <mazmorra>: el objetivo está dentro», y no se dibuja malla de matar o recoger allí. El
+  progreso de esos objetivos se cuenta igual. Hace falta la versión de los datos que trae esa marca; con
+  datos anteriores se ven como cualquier otro objetivo.
 - **Aspecto** (opciones, pestaña **Aspecto**, o `/smapas aspecto`): siete aspectos entre los que elige cada
   jugador, y se cambia en vivo sin recargar. Afecta al panel, a la lista de mapas y a la ventana de opciones
   (colores, marco y estructura de las misiones). **Clásico** es el de antes; los otros seis son diseños nuevos:
@@ -117,16 +151,37 @@ No se instala nada automáticamente: estos pasos los haces tú.
 - **Ventana de opciones** (rueda del panel o `/smapas opciones`): una columna de pestañas a la izquierda y el
   contenido de la pestaña elegida a la derecha, sin barras de desplazamiento; cada opción está en su pestaña y
   la ventana recuerda la última que usaste. Se mueve arrastrando su título.
-  - **Panel**: opacidad del fondo, tamaño original, y misiones visibles (Una o Lista y su límite).
+  - **Panel**: opacidad del fondo, tamaño original, misiones visibles (Una o Lista y su límite), información
+    de las misiones (al pulsar o todas abiertas), **tamaño del texto** (Pequeño, Normal o Grande), **símbolos
+    junto al estado** y los botones **Exportar configuración**, **Importar configuración** y **Diagnóstico**.
   - **Seguimiento**: *seguir la misión elegida* (flecha y destino; en No solo se marca con el botón Marcar
-    destino), *cambiar de mapa solo al entrar en otro*, *ocultar misiones terminadas sin entregar* y
-    *entregar misiones automáticamente* (activada por defecto; Shift la pausa).
+    destino), *cambiar de mapa solo al entrar en otro*, *ocultar misiones terminadas sin entregar*,
+    *orden de la lista del panel* (Progresión, por defecto, o Cercanía), *entregar misiones automáticamente*
+    (activada por defecto; Shift la pausa) y *sonido al completar un objetivo o la misión* (desactivado por defecto).
   - **Aspecto**: los siete aspectos con una muestra de sus colores.
   - **Flecha**: flecha propia o TomTom, tamaño, los siete diseños con vista previa y *girar al revés*.
   - **Mapa (M)**: destino marcado, símbolos (Solo «?», Todo o Ninguno), **intensidad del color**, *malla en la zona de los enemigos* y
     *línea de ruta con flechas al destino*.
   - **Minimapa**: símbolos Sí/No y su tamaño (50 a 200 %).
   - **Filtros**: las 12 categorías de misión (Mostrar, Marcar u Ocultar) en dos columnas.
+- **Tamaño del texto**: Pequeño (90 %), Normal o Grande (115 %). Se consigue escalando el panel entero, así que
+  letras, filas y botones crecen juntos y no se pisan; el panel se queda en su sitio. No cambia la ventana de
+  opciones ni la flecha.
+- **Sonido** (opcional): con el interruptor activado suena un aviso cuando se completa un objetivo de una misión
+  de tu registro y otro cuando la misión queda lista para entregar. Usa los sonidos del juego por su nombre en
+  `SOUNDKIT` (o el nombre antiguo si el cliente no lo tiene); no está comprobado en el cliente cuáles existen.
+- **Diagnóstico**: si el addon registra errores aparece un discreto **[!]** rojo en la barra del panel, a la
+  izquierda del botón de opciones. Al pulsarlo (o con el botón **Diagnóstico** de Opciones → Panel, o
+  `/smapas diagnostico`) se abre una ventana con un texto que puedes seleccionar y copiar (Ctrl+A, Ctrl+C):
+  versión, mapa activo y zona actual, el resultado de `/smapas api`, el de `/smapas test` y todos los errores
+  completos (en el chat se cortan a 160 caracteres). `/smapas errores borrar` vacía la lista y quita el [!].
+- **Exportar e importar la configuración** (Opciones → Panel): **Exportar** muestra un texto que empieza por
+  `SM1;` con el aspecto, la flecha (diseño, tamaño, posición, giro), tamaño y posición del panel, opacidad,
+  modo de las marcas, intensidad, tamaño del texto, interruptores y filtros. **No** incluye el progreso (misiones
+  entregadas, saltadas, mapa activo ni misión elegida por mapa). Cópialo, pégalo en **Importar** en otro
+  personaje y pulsa **Aplicar**. Los ajustes que nunca cambiaste en el personaje de origen no se exportan. La
+  importación es todo o nada: si una sola parte no es válida (clave desconocida o repetida, valor fuera de rango,
+  texto mal formado o de más de 4000 caracteres) no se cambia nada y el chat dice por qué.
 - **Intensidad de las marcas**: Normal, **Intensa** (por defecto) o Máxima. Aviva los colores del halo (sin duplicar el
   icono, que lo desenfocaría) y la franja del destino pasa a azul
   intenso con bordes dorados. Afecta al mapa M y al minimapa.
@@ -137,7 +192,12 @@ No se instala nada automáticamente: estos pasos los haces tú.
   en el borde señalando la dirección), sus otros puntos posibles y los «?» de las misiones terminadas
   de la zona donde estás (dentro del alcance). Usa el radio de vista del minimapa según su zoom y
   respeta la rotación del minimapa. Su tamaño se ajusta en las opciones. No hay símbolos en interiores ni
-  instancias, donde el cliente no da posición.
+  instancias, donde el cliente no da posición. Si otro addon hace el minimapa cuadrado (función
+  `GetMinimapShape` distinta de «ROUND»), los símbolos llegan hasta el borde cuadrado. Al pasar el ratón por un
+  símbolo de misión se ve su nombre, el tipo (Entregar, Recoger, Objetivo) y el motivo; los clics siguen
+  llegando al minimapa (no está comprobado en el cliente). Un símbolo que aparece durante un combate no
+  responde al ratón hasta salir de él (así no se toca nada restringido en combate). Con los símbolos
+  desactivados, o si el cliente no da el radio del minimapa, también se quita la línea de ruta.
 - **Lista de mapas** (botón «Mapas»): cabeceras por franja de niveles y una de mazmorras, una banda de
   color por grupo (Reinos del Este dorado, Kalimdor verde, Islas Forever violeta, mazmorras rojo), filas
   alternas, el rango de nivel a la derecha, el mapa actual resaltado con «>», «(estás aquí)» en verde y
@@ -153,7 +213,8 @@ No se instala nada automáticamente: estos pasos los haces tú.
 - **Marcas en el mapa del mundo** (tecla M): por defecto solo un «?» en quien entrega cada misión
   que tienes **terminada y sin entregar**. Nunca se marca dónde entregar una misión que no has
   terminado. `/smapas pines todo` añade «!» donde recoger misiones, y calaveras (matar) y rombos
-  (recoger o usar) en los objetivos sin terminar de las misiones de tu registro. Pasar el ratón da
+  (recoger o usar) en los objetivos sin terminar de las misiones de tu registro. La malla de la zona de los
+  objetivos es **roja** para matar y **azul** para recoger o usar, como sus iconos. Pasar el ratón da
   el detalle; pulsar una marca elige esa misión y la flecha la sigue. Las misiones que aún no puedes recoger
   (faltan previas o tu nivel es menor) conservan su «!» en quien las da, con el motivo y sus objetivos en el
   tooltip, pero nunca dibujan objetivos, malla ni monstruos en el mapa ni en el minimapa. Usa texturas base del juego
@@ -178,9 +239,24 @@ No se instala nada automáticamente: estos pasos los haces tú.
   su previa) antes que cualquier otra misión nueva del mapa.
 - **Flechas `<` `>`**: pasan a la misión anterior o siguiente **del mismo mapa** (botones
   del panel); la flecha de navegación y las marcas siguen a la misión elegida. No cambian de mapa.
+  Siguen siempre el orden de progresión del mapa, también con el orden por cercanía.
+- **Orden por cercanía** (opcional, desactivado por defecto; Opciones → Seguimiento o `/smapas orden cercania`): en
+  modo **Lista**, la misión elegida sigue arriba y las demás se ordenan de la más cercana a la más lejana según su
+  siguiente paso: dónde se recoge si aún no la tienes, el objetivo sin terminar más cercano si está en curso, o
+  quien la entrega si ya está terminada (la misma distancia que usa la flecha). Las que no tienen coordenadas o
+  están en otro continente van al final; a igual distancia se respeta el orden de progresión. El orden se
+  calcula al actualizarse el panel (al cambiar el registro de misiones, al entrar en otra zona o con
+  **Actualizar**), no mientras caminas, para que la lista no salte. En modo **Una** no cambia la misión elegida.
+  Los números de cada fila siguen siendo su posición en el orden de progresión.
 - **Cambiar de mapa a mano**: botón «Mapas» del panel, o
-  `/smapas siguiente` · `/smapas anterior` (orden de progresión). Con `auto off` el mapa elegido no
-  cambia al moverte.
+  `/smapas siguiente` · `/smapas anterior` (orden de progresión). El mapa elegido a mano **se mantiene
+  hasta que cambies de zona**: mientras sigas en la misma zona no vuelve solo al mapa donde estás (el pie
+  del panel lo indica); al entrar en otra zona el seguimiento automático decide otra vez. Con `auto off` el
+  mapa elegido no cambia nunca al moverte.
+- **Zonas sin misiones**: si los datos incluyen la lista de zonas sin misiones registradas
+  (`ns.Index.missingMaps`, que genera `preparar_sendamapas.py`), al entrar en una de ellas el panel y
+  `/smapas aqui` dicen «<Nombre>: zona sin misiones registradas en la base actual» en lugar de «No se reconoce
+  el mapa actual». Sin esa lista se mantiene el mensaje de antes.
 - **Cadenas entre mapas**: la información de una misión muestra el mapa de sus previas y siguientes sin
   cargar ese módulo (cada módulo guarda nombre y mapa de sus enlaces). El panel ya no tiene ventana de
   diario: se quitó a petición del autor.
@@ -197,7 +273,10 @@ No se instala nada automáticamente: estos pasos los haces tú.
   completar muestra sus objetivos, no a su entregador.
 - **Datos guardados por personaje** en `SendaMapasDB`: mapa activo, misión
   elegida por mapa, saltadas, filtros, seguir mapa, tamaño, posición y
-  opacidad del panel y de las opciones.
+  opacidad del panel y de las opciones, tamaño del texto, símbolos y sonido. Lleva un número de versión
+  (`schema`) y al cargar se limpia: la lista de misiones abiertas vuelve a empezar si pasa de 200, y de las
+  entregas vistas por el addon se quitan solo las que el propio juego ya da como completadas (ninguna entrega se
+  pierde).
 
 ## Decisiones de diseño
 

@@ -94,8 +94,10 @@ function ns:ChainSummary(q)
 end
 
 -- Select a linked quest, switching module when it belongs to another map.
-function ns:OpenLink(id)
-    local q = self.selected and self:Quest(self.selected)
+-- `fromId` (optional): the quest whose chain holds the link (the selected one by default).
+function ns:OpenLink(id, fromId)
+    fromId = fromId or self.selected
+    local q = fromId and self:Quest(fromId)
     local target
     for _, link in ipairs(q and self:ChainLinks(q) or {}) do if link.id == id then target = link end end
     if not target then
@@ -110,6 +112,150 @@ function ns:OpenLink(id)
     if target.zone ~= self.saved.map and not self:LoadMap(target.zone) then return false end
     self:SelectQuest(id)
     return true
+end
+
+-- Alt+click on a quest row: open its chain neighbour, also on another map. First a previous quest not yet
+-- handed in, otherwise the first following one, otherwise the first previous one.
+function ns:ChainTarget(id)
+    local q = self:Quest(id)
+    local links = q and self:ChainLinks(q) or {}
+    local firstPrevious, firstNext
+    for _, link in ipairs(links) do
+        if link.kind == "Previa" then
+            firstPrevious = firstPrevious or link
+            -- Handed in according to the game, whether or not the module of its map is loaded.
+            local done = self.context and self.context.completed(link.id)
+            if not done then return link end
+        elseif link.kind == "Siguiente" then
+            firstNext = firstNext or link
+        end
+    end
+    return firstNext or firstPrevious
+end
+
+function ns:OpenChainLink(id)
+    local link = self:ChainTarget(id)
+    if not link then
+        local q = self:Quest(id)
+        self:Print("«" .. (q and q.n or tostring(id)) .. "» no tiene misión previa ni siguiente en los datos.")
+        return false
+    end
+    return self:OpenLink(link.id, id)
+end
+
+-- Order "cercania" (option, off by default): the visible quests by distance from the player to their next
+-- step (pickup when available, nearest unfinished objective when in progress, turn-in when finished), using
+-- the same spots and ArrowVector as the arrow. Quests whose distance is unknown (no coordinates, another
+-- continent) go last; ties keep the map's progression order. Computed in Refresh only (also after a zone
+-- change, which refreshes), so the list does not move while you walk.
+function ns:StepDistance(id, shared)
+    local q = self:Quest(id)
+    if not q then return nil end
+    local state = self:EntryState(id)
+    local spots
+    if state == "active" then spots = self:ObjectiveSpotList(q)
+    elseif state == "turnin" then spots = self:EntitySpots(q.e, self:QuestZone(id))
+    else spots = self:EntitySpots(q.s, self:QuestZone(id)) end
+    local spot = spots and #spots > 0 and self:BestSpot(spots)
+    if not spot then return nil end
+    local _, distance = self:ArrowVector(spot, shared)
+    return type(distance) == "number" and distance or nil
+end
+
+-- Returns {id -> rank} for the given ids (progression order), nearest first.
+function ns:NearOrder(ids)
+    local shared, entries = {}, {}
+    for position, id in ipairs(ids) do
+        entries[#entries + 1] = {id = id, position = position, distance = self:StepDistance(id, shared) or math.huge}
+    end
+    table.sort(entries, function(a, b)
+        if a.distance ~= b.distance then return a.distance < b.distance end
+        return a.position < b.position
+    end)
+    local rank = {}
+    for index, entry in ipairs(entries) do rank[entry.id] = index end
+    return rank
+end
+
+-- The ids in the order the panel list uses: progression, or the ranks computed in the last Refresh. Ids that
+-- appeared after that Refresh keep their progression place after the ranked ones.
+function ns:ListOrder(ids)
+    local rank = self.saved and self.saved.listOrder == "cercania" and self.nearOrder
+    if not rank then return ids end
+    local ordered = {}
+    for position, id in ipairs(ids) do ordered[position] = {id = id, position = position} end
+    table.sort(ordered, function(a, b)
+        local ra, rb = rank[a.id] or math.huge, rank[b.id] or math.huge
+        if ra ~= rb then return ra < rb end
+        return a.position < b.position
+    end)
+    for index, entry in ipairs(ordered) do ordered[index] = entry.id end
+    return ordered
+end
+
+-- Rich tooltip of a quest (rows of the panel): id, level and XP, state, pickup, turn-in, chain with state
+-- and map. As everywhere else, the turn-in place is only given once the quest is finished.
+local LINK_STATE_UNLOADED = "mapa sin cargar"
+function ns:FillQuestTooltip(tooltip, id)
+    local q = self:Quest(id)
+    tooltip:SetText(q and q.n or ("Misión " .. tostring(id)))
+    if not q then return end
+    local state = self:EntryState(id)
+    tooltip:AddLine("Misión #" .. q.i .. " · " .. self:QuestInfoLine(q), 0.75, 0.85, 0.95, true)
+    tooltip:AddLine("Estado: " .. self:StateLabel(state), 1, 0.82, 0.3, true)
+    tooltip:AddLine("Inicio: " .. self:PickupText(q), 1, 1, 1, true)
+    if state == "turnin" or state == "done" then
+        tooltip:AddLine("Entrega: " .. self:TurnInText(q), 1, 1, 1, true)
+    else
+        tooltip:AddLine("Entrega: se indica al terminarla.", 0.7, 0.7, 0.7, true)
+    end
+    for _, link in ipairs(self:ChainLinks(q)) do
+        local linkState = self:Quest(link.id) and self:StateLabel((self:EntryState(link.id))) or LINK_STATE_UNLOADED
+        tooltip:AddLine(link.kind .. ": " .. link.name .. " [" .. link.label .. "] — " .. linkState, 0.8, 0.8, 0.6, true)
+    end
+    tooltip:AddLine("Clic: abrir o cerrar la información · Alt+clic: abrir la previa o la siguiente", 0.6, 0.8, 0.9, true)
+    tooltip:AddLine("Clic derecho: saltar esta misión (/smapas restaurar las devuelve)", 0.6, 0.8, 0.9, true)
+end
+
+-- Optional sound (option "Sonido al completar", off by default): one sound when an objective of a quest in
+-- the log gets finished, another when the whole quest is ready to hand in. Called from every Refresh; the
+-- first look at a quest only records it. Sound ids are NOT CONFIRMED for 16001: SOUNDKIT names are tried
+-- first, then the old string names, always under pcall.
+local SOUNDS = {
+    objective = {kit = {"IG_QUEST_LIST_SELECT", "IG_MAINMENU_OPTION_CHECKBOX_ON"}, name = "igQuestListSelect"},
+    quest = {kit = {"IG_QUEST_LIST_COMPLETE", "READY_CHECK"}, name = "igQuestListComplete"},
+}
+function ns:PlayProgressSound(kind)
+    local sound = SOUNDS[kind]
+    if not sound or type(PlaySound) ~= "function" then return false end
+    for _, key in ipairs(sound.kit) do
+        local id = type(SOUNDKIT) == "table" and SOUNDKIT[key]
+        if id and pcall(PlaySound, id) then return key end
+    end
+    return pcall(PlaySound, sound.name) and sound.name or false
+end
+
+function ns:CheckProgressSounds()
+    if not (self.saved and self.saved.progressSound) then self.progressSeen = nil; return end
+    local seen, now = self.progressSeen, {}
+    local play
+    for id in pairs(self.log or {}) do
+        local lines = self.Call(C_QuestLog and C_QuestLog.GetQuestObjectives, id)
+        local finished = 0
+        for _, line in ipairs(type(lines) == "table" and lines or {}) do
+            if type(line) == "table" and line.finished then finished = finished + 1 end
+        end
+        local ready = self.context and self.context.ready(id) and true or false
+        now[id] = {finished = finished, ready = ready}
+        local before = seen and seen[id]
+        if before then
+            if ready and not before.ready then play = "quest"
+            elseif finished > before.finished and play ~= "quest" then play = "objective" end
+        end
+    end
+    self.progressSeen = now
+    if play then self:PlayProgressSound(play) end
+    return play
 end
 
 function ns:EntitySpots(entities, sourceZone)
@@ -189,9 +335,14 @@ function ns:ObjectiveSpotList(q)
     for _, ob in ipairs(obs) do
         for area, points in pairs(ob.z or {}) do
             local map = self:UiMapForZone(area, nil)
+            -- `e` (from the data generator; may not exist yet): the objective is inside that dungeon and the point
+            -- is its outer entrance, so the destination is named "Entrada de <e>" (objective in brackets).
+            local entrance = type(ob.e) == "string" and ob.e ~= "" and ob.e or nil
+            local name = entrance and ("Entrada de " .. entrance .. (ob.n and (" (" .. ob.n .. ")") or "")) or ob.n or "Objetivo"
             for _, point in ipairs(points) do
                 if map and type(point[1]) == "number" and type(point[2]) == "number" then
-                    spots[#spots+1] = {map = map, x = point[1] / 100, y = point[2] / 100, name = ob.n or "Objetivo"}
+                    spots[#spots+1] = {map = map, x = point[1] / 100, y = point[2] / 100, name = name,
+                        entrance = entrance, objective = ob.n}
                 else unresolved = unresolved + 1 end
             end
         end
@@ -243,6 +394,7 @@ function ns:Navigate(id, quiet)
             if quiet then
                 self:Print(ns.AllObjectivesFinished(id) and "Objetivos completados: ya no se marcan en el mapa; falta entregar la misión." or
                     "Esta misión no tiene coordenadas de objetivo en los datos: no hay flecha; sigue su texto en el registro de misiones.")
+                return false, true          -- second value: the player was already told (UpdateMarkedQuest adds nothing)
             end
             return false
         end
@@ -260,6 +412,7 @@ function ns:Navigate(id, quiet)
     end
     self.navFail = nil
     self:ClearWaypoint()
+    if spot.entrance then label = "el objetivo está dentro" end
     local title = q.n .. " — " .. spot.name
     if tomtom then
         local ok, uid = pcall(TomTom.AddWaypoint, TomTom, spot.map, spot.x, spot.y,
@@ -291,9 +444,13 @@ function ns:UpdateMarkedQuest()
     elseif state ~= self.markerState then
         -- Quiet: a step without coordinates must not repeat a chat line on every quest-log update. If there is
         -- no destination for the new step the old arrow is dropped (not left pointing at the previous one).
-        if not self:Navigate(self.markerQuest, true) then
+        local marked, told = self:Navigate(self.markerQuest, true)
+        if not marked then
             if self.markerQuest then self:ClearWaypoint() end
-            self:Print("El siguiente paso de la misión marcada no tiene coordenadas en los datos; sigue su texto en el registro.")
+            -- One line per fact: Navigate already explained a step in progress without coordinates.
+            if not told then
+                self:Print("El siguiente paso de la misión marcada no tiene coordenadas en los datos; sigue su texto en el registro.")
+            end
         end
     else
         -- Same state: retarget when an objective got finished (the log changed which ones remain).

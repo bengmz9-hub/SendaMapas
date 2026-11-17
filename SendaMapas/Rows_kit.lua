@@ -157,6 +157,13 @@ function kit.selection(row, x, y, width, height)
     back:SetPoint("BOTTOMRIGHT", row, "TOPLEFT", x + width, -(y + height))
 end
 
+-- Open/close sign of a row that unfolds on click: "+" closed, "-" open, in a 10 px box (same piece as the
+-- rail and card layouts). The layout keeps kit.SIGN px free for it at the right of the line it goes on.
+kit.SIGN = 14
+function kit.sign(row, item, role, x, y)
+    return kit.line(row, "sign", kit.BODY, role, item.lines and "-" or "+", x, y, 10, "CENTER")
+end
+
 -- State chip: the state word in a box tinted and outlined with the state color. Returns width, height.
 function kit.chip(row, name, item, x, y, upper, width)
     local label = item.stateLabel or ""

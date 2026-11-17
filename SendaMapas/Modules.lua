@@ -73,6 +73,15 @@ function ns:EnsureMap(zoneId)
 end
 
 -- Switch the active map. Failure keeps the previous map, selection and waypoint.
+-- A map chosen by hand (picker, /smapas mapa, siguiente/anterior; not the automatic loads, which are quiet) stays
+-- until the player moves to another zone: then the automatic follow takes over again.
+local function rememberManual(self, zoneId, quiet)
+    if quiet then return end
+    local here = self:CurrentZoneId()
+    if zoneId == here then self.manualZone, self.manualFrom = nil, nil
+    else self.manualZone, self.manualFrom = zoneId, here end
+end
+
 function ns:LoadMap(zoneId, quiet)
     zoneId = tonumber(zoneId)
     if not zoneId or not self.Index.maps[zoneId] then
@@ -86,12 +95,13 @@ function ns:LoadMap(zoneId, quiet)
         if self.Render then self:Render() end
         return false
     end
-    if self.activeData and self.saved.map == zoneId then self:Refresh(); return true end
+    if self.activeData and self.saved.map == zoneId then rememberManual(self, zoneId, quiet); self:Refresh(); return true end
     if self.activeData then self.saved.mapSelections[self.saved.map] = self.selected end
     self.saved.map, self.activeData, self.moduleError = zoneId, data, nil
     self.selected = nil
     local previous = self.saved.mapSelections[zoneId]
     if previous and data.byId[previous] then self.selected = previous end
+    rememberManual(self, zoneId, quiet)
     self:Refresh()
     self:PrintMapSummary()
     return true
@@ -167,7 +177,9 @@ function ns:CheckZone()
     local zone = self:CurrentZoneId()
     self.currentZone = zone
     local target
-    if self.saved.autoSelect and zone then target = zone
+    local manual = self.manualZone and self.manualZone == self.saved.map and zone == self.manualFrom
+    if not manual then self.manualZone, self.manualFrom = nil, nil end      -- the player went to another zone
+    if self.saved.autoSelect and zone and not manual then target = zone
     elseif not self.activeData then target = self.saved.map end
     if not target or (target == self.saved.map and self.activeData) then
         if self.activeData then self:Refresh() elseif self.Render then self:Render() end

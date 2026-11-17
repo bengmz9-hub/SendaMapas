@@ -3,6 +3,7 @@
 -- ("#1") and, under it, the state as a small pill; a 1 px line closes the spine. Everything else (name
 -- and tags, instruction, the information box) lives in the right column, so the names start at the
 -- same x in every row. The row is never lower than 44 px; the spine content is centered vertically.
+-- A quiet "+" / "-" at the right end of the name line says the row unfolds on click.
 local _, ns = ...
 local kit = ns.RowKit
 if not (kit and kit.proposedLayouts) then return end
@@ -19,7 +20,9 @@ ns.RowLayouts.pill = {
         local bodyWidth = rowWidth - bodyX - padX - 1
         local y = padY
 
-        y = y + kit.write(row, row.title, primary and kit.BIG or kit.NAME, "title", kit.name(item), bodyX, y, bodyWidth) + 3
+        local signWidth = item.state ~= "empty" and kit.SIGN or 0
+        if signWidth > 0 then kit.sign(row, item, "footer", bodyX + bodyWidth - 10, y + (primary and 2 or 0)) end
+        y = y + kit.write(row, row.title, primary and kit.BIG or kit.NAME, "title", kit.name(item), bodyX, y, bodyWidth - signWidth) + 3
         local instruction = kit.action(item, nil, "coords")
         if item.meta ~= "" then instruction = ns.Esc("footer", item.meta .. " ·") .. " " .. instruction end
         y = y + kit.write(row, row.instruction, nil, "instruction", instruction, bodyX, y, bodyWidth)

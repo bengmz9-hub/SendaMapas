@@ -58,33 +58,45 @@ end
 -- ------------------------------------------------------------------------------- tab contents
 local function buildPanel(self, tab)
     heading(tab, -4, "Fondo del panel")
-    self.opacityLabel = text(tab, "GameFontHighlightSmall", 0, -30, CONTENT_W)
-    self.opacitySlider = addSlider(tab, -60, 0, 100, 1, "0%", "100%", function(value)
+    self.opacityLabel = text(tab, "GameFontHighlightSmall", 0, -26, CONTENT_W)
+    self.opacitySlider = addSlider(tab, -50, 0, 100, 1, "0%", "100%", function(value)
         if not ns.adjustingOpacity then ns:SetBackgroundOpacity(value) end
     end)
     self.opacityReset = button(tab, "Color y fondo originales", 250, 0, function() ns:SetBackgroundOpacity(nil) end)
-    place(self.opacityReset, tab, 0, -96)
+    place(self.opacityReset, tab, 0, -80)
     self.sizeReset = button(tab, "Tamaño original", 200, 0, function() ns:ResetHUDSize() end)
-    place(self.sizeReset, tab, 260, -96)
-    note(tab, -130, "Ajusta el fondo y los bordes. El texto conserva su opacidad.")
-    heading(tab, -168, "Misiones visibles en el panel")
+    place(self.sizeReset, tab, 260, -80)
+    heading(tab, -116, "Misiones visibles en el panel")
     self.hudOne = button(tab, "Una", 110, 0, function() ns:SetHUDMode("single") end)
-    place(self.hudOne, tab, 0, -194)
+    place(self.hudOne, tab, 0, -138)
     self.hudList = button(tab, "Lista", 110, 0, function() ns:SetHUDMode("list") end)
-    place(self.hudList, tab, 120, -194)
-    text(tab, "GameFontHighlightSmall", 0, -240, 190):SetText("Límite de la lista (1–8)")
+    place(self.hudList, tab, 120, -138)
+    text(tab, "GameFontHighlightSmall", 240, -144, 120):SetText("Límite (1–8)")
     self.hudLess = button(tab, "-", 30, 0, function() ns:SetHUDMode("list", ns.saved.visibleCount - 1) end)
-    place(self.hudLess, tab, 200, -233)
-    self.hudCount = text(tab, "GameFontHighlightSmall", 246, -240, 24)
+    place(self.hudLess, tab, 350, -138)
+    self.hudCount = text(tab, "GameFontHighlightSmall", 392, -144, 24)
     ns.Tint(self.hudCount, "footer")
     self.hudMore = button(tab, "+", 30, 0, function() ns:SetHUDMode("list", ns.saved.visibleCount + 1) end)
-    place(self.hudMore, tab, 276, -233)
-    note(tab, -274, "Una mantiene la misión actual. Lista añade misiones del mapa activo, hasta el límite.")
-    addToggle(tab, "openAll", -312, "Información de las misiones",
+    place(self.hudMore, tab, 420, -138)
+    addToggle(tab, "openAll", -176, "Información de las misiones",
         function() return ns.saved.openAll and "Todas abiertas" or "Al pulsar" end,
         function() ns:SetOpenAll(not ns.saved.openAll, true) end)
-    note(tab, -350, "Al pulsar: la información se abre al hacer clic en la misión. Todas abiertas: se ven abiertas todas las "
-        .. "que salen en el panel (también con el botón Abrir todas).")
+    addToggle(tab, "textSize", -212, "Tamaño del texto del panel",
+        function() return ns:TextSizeName() end,
+        function() ns:SetTextSize(ns:NextTextSize(), true) end)
+    addToggle(tab, "stateSymbols", -248, "Símbolos junto al estado ([!] [?] …)",
+        function() return ns.saved.stateSymbols and "Sí" or "No" end,
+        function() ns:SetStateSymbols(not ns.saved.stateSymbols, true) end)
+    heading(tab, -288, "Copia de la configuración y diagnóstico")
+    local third = math.floor((CONTENT_W - 20) / 3)
+    self.exportButton = button(tab, "Exportar configuración", third, 0, function() ns:ShowExport() end)
+    place(self.exportButton, tab, 0, -312)
+    self.importButton = button(tab, "Importar configuración", third, 0, function() ns:ShowImport() end)
+    place(self.importButton, tab, third + 10, -312)
+    self.diagnosticsButton = button(tab, "Diagnóstico", third, 0, function() ns:ShowDiagnostics() end)
+    place(self.diagnosticsButton, tab, 2 * (third + 10), -312)
+    note(tab, -346, "Exportar copia el aspecto y los ajustes visuales (no el progreso). Una lista hasta el límite; "
+        .. "Al pulsar abre la información al hacer clic en la misión.")
 end
 
 local function buildSkin(self, tab)
@@ -127,21 +139,25 @@ local function buildFollow(self, tab)
     addToggle(tab, "followQuest", -34, "Seguir la misión elegida (flecha y destino)",
         function() return ns.saved.autoNavigate ~= false and "Sí" or "No" end,
         function() ns:SetAutoNavigate(ns.saved.autoNavigate == false, true) end)
-    addToggle(tab, "followMap", -76, "Cambiar de mapa solo al entrar en otro",
+    addToggle(tab, "followMap", -70, "Cambiar de mapa solo al entrar en otro",
         function() return ns.saved.autoSelect and "Sí" or "No" end,
         function() ns:SetAutoSelect(not ns.saved.autoSelect) end)
-    addToggle(tab, "hideTurnin", -118, "Ocultar misiones terminadas sin entregar",
+    addToggle(tab, "hideTurnin", -106, "Ocultar misiones terminadas sin entregar",
         function() return ns.saved.hideTurnin and "Sí" or "No" end,
         function() ns:SetHideTurnin(not ns.saved.hideTurnin, true) end)
-    note(tab, -170, "Seguir la misión: la flecha y el destino van solos a la misión que eliges. En No solo se marca "
-        .. "el destino con el botón Marcar destino.")
-    note(tab, -222, "Ocultar terminadas: quita de la lista, del mapa y de la flecha las misiones que ya tienes completas "
-        .. "pero no entregadas.")
-    addToggle(tab, "autoTurnin", -270, "Entregar misiones automáticamente",
+    addToggle(tab, "listOrder", -142, "Orden de la lista del panel",
+        function() return ns.saved.listOrder == "cercania" and "Cercanía" or "Progresión" end,
+        function() ns:SetListOrder(ns.saved.listOrder == "cercania" and "progresion" or "cercania", true) end)
+    note(tab, -178, "Seguir: la flecha va sola a la misión que eliges (en No, solo con Marcar destino). Ocultar "
+        .. "terminadas: las quita de la lista, del mapa y de la flecha. Cercanía: en Lista, la más cercana primero.")
+    addToggle(tab, "autoTurnin", -232, "Entregar misiones automáticamente",
         function() return ns.saved.autoTurnin ~= false and "Sí" or "No" end,
         function() ns:SetAutoTurnin(ns.saved.autoTurnin == false, true) end)
-    note(tab, -312, "Entregar: al hablar con quien recibe la misión se entrega sola. Nunca acepta misiones nuevas, "
+    note(tab, -270, "Entregar: al hablar con quien recibe la misión se entrega sola. Nunca acepta misiones nuevas, "
         .. "Shift la pausa y, si hay varias recompensas para elegir, la ventana queda abierta.")
+    addToggle(tab, "progressSound", -312, "Sonido al completar un objetivo o la misión",
+        function() return ns.saved.progressSound and "Sí" or "No" end,
+        function() ns:SetProgressSound(not ns.saved.progressSound, true) end)
 end
 
 local function buildArrow(self, tab)
@@ -346,4 +362,318 @@ function ns:FinishOptionsGeometry()
         f:ClearAllPoints()
         f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, y)
     end
+end
+
+-- ------------------------------------------------------------------------- text size (accessibility)
+-- The fonts of the rows belong to Rows_kit.lua (another batch), so the size of the text is changed with
+-- the scale of the panel frame: every font, row and button grows together and nothing overlaps (the
+-- row layouts keep measuring in panel units). The saved position is converted so the panel stays put.
+local TEXT_SCALE = {small = 0.9, normal = 1, large = 1.15}
+local TEXT_NAMES = {small = "Pequeño", normal = "Normal", large = "Grande"}
+local TEXT_ORDER = {"small", "normal", "large"}
+local TEXT_WORDS = {small = "small", normal = "normal", large = "large", ["pequeño"] = "small", pequeno = "small",
+    grande = "large"}
+ns.textScales = TEXT_SCALE
+
+function ns:TextSize()
+    local key = self.saved and self.saved.textSize
+    return TEXT_SCALE[key] and key or "normal"
+end
+
+function ns:TextSizeName() return TEXT_NAMES[self:TextSize()] end
+
+function ns:NextTextSize()
+    local current = self:TextSize()
+    for index, key in ipairs(TEXT_ORDER) do
+        if key == current then return TEXT_ORDER[index % #TEXT_ORDER + 1] end
+    end
+    return "normal"
+end
+
+function ns:ApplyTextSize()
+    local f = self.frame
+    if not f then return end
+    local scale, old = TEXT_SCALE[self:TextSize()], self.hudScale
+    if old == nil then
+        -- First application of the session (CreateUI): the saved position is already in units of the saved
+        -- size (it was stored or converted under it), so only the scale is set; nothing is converted or moved.
+        f:SetScale(scale)
+        self.hudScale = scale
+        return
+    end
+    if scale == old then return end
+    f:SetScale(scale)
+    self.hudScale = scale
+    local position = self.saved.hudPosition
+    if type(position) == "table" and type(position.x) == "number" and type(position.y) == "number" then
+        position.x, position.y = position.x * old / scale, position.y * old / scale
+        f:ClearAllPoints()
+        f:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", position.x, position.y)
+    end
+end
+
+function ns:SetTextSize(word, quiet)
+    local key = TEXT_WORDS[tostring(word or ""):lower()]
+    if not key then self:Print("Uso: /smapas texto pequeño | normal | grande"); return false end
+    self.saved.textSize = key
+    self:ApplyTextSize()
+    if not quiet then self:Print("Tamaño del texto del panel: " .. TEXT_NAMES[key] .. ".") end
+    if self.RenderHUD then self:RenderHUD() end
+    self:RenderOptions()
+    return true
+end
+
+function ns:SetStateSymbols(enabled, quiet)
+    self.saved.stateSymbols = enabled and true or false
+    if not quiet then
+        self:Print(self.saved.stateSymbols and "Símbolos de estado: activados ([!] Recoger, [?] Entregar…)." or
+            "Símbolos de estado: desactivados.")
+    end
+    if self.RenderHUD then self:RenderHUD() end
+    self:RenderOptions()
+end
+
+function ns:SetProgressSound(enabled, quiet)
+    self.saved.progressSound = enabled and true or false
+    self.progressSeen = nil
+    if not quiet then
+        self:Print(self.saved.progressSound and "Sonido al completar objetivos y misiones: activado." or
+            "Sonido al completar objetivos y misiones: desactivado.")
+    end
+    self:RenderOptions()
+end
+
+-- Order of the panel list: "progresion" (default, the map's own order) or "cercania" (nearest next step first,
+-- in Lista mode; Navigation.lua NearOrder). The order is computed in Refresh, so it is applied with one here.
+local LIST_ORDER_WORDS = {progresion = "progresion", ["progresi\195\179n"] = "progresion", cercania = "cercania",
+    ["cercan\195\173a"] = "cercania"}
+function ns:SetListOrder(word, quiet)
+    local mode = LIST_ORDER_WORDS[tostring(word or ""):lower()]
+    if not mode then self:Print("Uso: /smapas orden progresion | cercania"); return false end
+    self.saved.listOrder = mode
+    if not quiet then
+        self:Print(mode == "cercania" and "Orden de la lista: por cercanía (la más cercana primero, en modo Lista)." or
+            "Orden de la lista: orden de progresión del mapa.")
+    end
+    self:Refresh()
+    self:RenderOptions()
+    return true
+end
+
+-- ------------------------------------------------------------------------------- text windows
+-- One window with a selectable multi-line box (Ctrl+A / Ctrl+C), used by Diagnóstico, Exportar and
+-- Importar. `apply` (optional) adds an Aplicar button that receives the text of the box.
+function ns:ShowTextWindow(title, body, apply, hint)
+    local w = self.textWindow
+    if not w then
+        w = CreateFrame("Frame", "SendaMapasTextWindow", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+        w:SetSize(560, 400)
+        w:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+        w:SetFrameStrata("DIALOG")
+        w:SetClampedToScreen(true)
+        w:EnableMouse(true)
+        w:SetMovable(true)
+        w:RegisterForDrag("LeftButton")
+        w:SetScript("OnDragStart", function() w:StartMoving() end)
+        w:SetScript("OnDragStop", function() w:StopMovingOrSizing() end)
+        if w.SetBackdrop then w:SetBackdrop(ui.backdrop) end
+        ns.SkinFrame(w, "header", "border", false, true)
+        w.title = text(w, "GameFontNormal", 14, -14, 480)
+        ns.Tint(w.title, "headerText")
+        w.hint = text(w, "GameFontHighlightSmall", 14, -36, 530)
+        ns.Tint(w.hint, "footer")
+        local close = CreateFrame("Button", nil, w, "UIPanelCloseButton")
+        close:SetPoint("TOPRIGHT", -2, -2)
+        local scroll = CreateFrame("ScrollFrame", "SendaMapasTextScroll", w, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", w, "TOPLEFT", 14, -58)
+        scroll:SetPoint("BOTTOMRIGHT", w, "BOTTOMRIGHT", -32, 46)
+        local box = CreateFrame("EditBox", nil, scroll)
+        box:SetMultiLine(true)
+        box:SetAutoFocus(false)
+        box:SetFontObject(ChatFontNormal or GameFontHighlightSmall)
+        box:SetWidth(500)
+        box:SetHeight(290)              -- minimum height: the whole visible area is the box, also when empty
+        box:SetScript("OnEscapePressed", function() w:Hide() end)
+        scroll:SetScrollChild(box)
+        -- A click anywhere in the scrolling area gives the focus back to the box.
+        scroll:EnableMouse(true)
+        scroll:SetScript("OnMouseDown", function() box:SetFocus() end)
+        w.scroll, w.box = scroll, box
+        w.apply = button(w, "Aplicar", 120, 0, function()
+            if w.onApply then w.onApply(w.box:GetText() or "") end
+        end)
+        place(w.apply, w, 14, -362)
+        if UISpecialFrames then table.insert(UISpecialFrames, "SendaMapasTextWindow") end
+        self.textWindow = w
+    end
+    w.title:SetText(title)
+    w.hint:SetText(hint or "Ctrl+A selecciona todo; Ctrl+C lo copia.")
+    w.box:SetText(body or "")
+    w.onApply = apply
+    w.apply:SetShown(apply ~= nil)
+    w:Show()
+    w.box:SetFocus()
+    w.box:HighlightText()
+    return w
+end
+
+function ns:ShowDiagnostics()
+    return self:ShowTextWindow("Diagnóstico de Senda Mapas", self:DiagnosticText(), nil,
+        "Copia este texto (Ctrl+A, Ctrl+C) para informar de un problema. /smapas errores borrar vacía la lista.")
+end
+
+-- ------------------------------------------------------------------- export / import of settings
+-- Only visual preferences and switches; never the progress (turnedIn, skipped, map, mapSelections) nor
+-- anything that is not in this list. Text form: "SM1;key=value;...". Import is all or nothing: one bad
+-- piece rejects the whole text and nothing changes. Values not set on this character are not exported.
+local function int(low, high)
+    return function(v)
+        if not v:match("^%-?%d+$") then return nil end
+        local n = tonumber(v)
+        if n and n >= low and n <= high then return n end
+    end
+end
+local function bool(v) if v == "1" then return true elseif v == "0" then return false end end
+local function oneOf(...)
+    local set = {}
+    for _, value in ipairs({...}) do set[value] = true end
+    return function(v) if set[v] then return v end end
+end
+local function point(v)
+    local x, y = v:match("^(%-?%d+%.?%d*),(%-?%d+%.?%d*)$")
+    x, y = tonumber(x), tonumber(y)
+    if x and y and x >= -2000 and x <= 10000 and y >= -2000 and y <= 10000 then return {x = x, y = y} end
+end
+local function writePoint(p) return string.format("%.1f,%.1f", p.x, p.y) end
+local function writeBool(b) return b and "1" or "0" end
+local function writeInt(n) return string.format("%d", math.floor(n + 0.5)) end
+
+-- {key, parse(text) -> value or nil, write(value) -> text}
+local SETTINGS = {
+    {"skin", function(v) if ns.Skins.list[v] then return v end end},
+    {"arrowDesign", function(v) for _, d in ipairs(ns.ArrowDesigns) do if d.key == v then return v end end end},
+    {"arrowSize", int(24, 128), writeInt}, {"arrowMirror", bool, writeBool}, {"arrowPosition", point, writePoint},
+    {"navigator", oneOf("own", "tomtom")},
+    {"hudWidth", int(360, 900), writeInt}, {"hudHeight", int(172, 600), writeInt}, {"hudPosition", point, writePoint},
+    {"hudMode", oneOf("single", "list")}, {"visibleCount", int(1, 8), writeInt},
+    {"backgroundOpacity", int(0, 100), writeInt},
+    {"mapPins", bool, writeBool}, {"mapPinMode", oneOf("entregar", "todo")}, {"markIntensity", int(1, 3), writeInt},
+    {"mapDestination", bool, writeBool}, {"mapZones", bool, writeBool}, {"mapRoute", bool, writeBool},
+    {"minimapPins", bool, writeBool}, {"minimapScale", int(50, 200), writeInt},
+    {"textSize", oneOf("small", "normal", "large")}, {"stateSymbols", bool, writeBool},
+    {"progressSound", bool, writeBool}, {"autoNavigate", bool, writeBool}, {"autoSelect", bool, writeBool},
+    {"hideTurnin", bool, writeBool}, {"openAll", bool, writeBool}, {"autoTurnin", bool, writeBool},
+    {"listOrder", oneOf("progresion", "cercania")},
+}
+local FILTER_MODE = oneOf("show", "mark", "hide")
+local MAX_TEXT = 4000
+ns.exportKeys = SETTINGS
+
+function ns:ExportSettings()
+    local parts = {"SM1"}
+    for _, spec in ipairs(SETTINGS) do
+        local value = self.saved[spec[1]]
+        if value ~= nil then
+            local ok, written = pcall(spec[3] or tostring, value)
+            if ok and type(written) == "string" and spec[2](written) ~= nil then parts[#parts + 1] = spec[1] .. "=" .. written end
+        end
+    end
+    for _, category in ipairs(self.Filters.categories) do
+        local mode = self.saved.filters[category.key]
+        if FILTER_MODE(tostring(mode)) then parts[#parts + 1] = "filter." .. category.key .. "=" .. mode end
+    end
+    return table.concat(parts, ";")
+end
+
+-- Returns true and the number of settings, or false and the reason; on false nothing was changed.
+function ns:ImportSettings(text)
+    if type(text) ~= "string" then return false, "no hay texto" end
+    text = text:gsub("^%s+", ""):gsub("%s+$", "")
+    if #text == 0 or #text > MAX_TEXT then return false, "texto vacío o demasiado largo" end
+    if text:sub(1, 4) ~= "SM1;" then return false, "no es una configuración de Senda Mapas (falta SM1)" end
+    local byKey, filterKeys = {}, {}
+    for _, spec in ipairs(SETTINGS) do byKey[spec[1]] = spec end
+    for _, category in ipairs(self.Filters.categories) do filterKeys["filter." .. category.key] = category.key end
+    local values, filters, count = {}, {}, 0
+    for piece in (text:sub(5) .. ";"):gmatch("([^;]*);") do
+        if piece ~= "" then
+            local key, raw = piece:match("^([%a%.]+)=([%w%.,%-]+)$")
+            if not key then return false, "fragmento mal formado: " .. piece:sub(1, 40) end
+            if values[key] ~= nil or filters[key] ~= nil then return false, "clave repetida: " .. key end
+            if byKey[key] then
+                local value = byKey[key][2](raw)
+                if value == nil then return false, "valor no válido para " .. key .. ": " .. raw end
+                values[key] = value
+            elseif filterKeys[key] then
+                local mode = FILTER_MODE(raw)
+                if not mode then return false, "valor no válido para " .. key .. ": " .. raw end
+                filters[key] = mode
+            else
+                return false, "clave desconocida: " .. key
+            end
+            count = count + 1
+        end
+    end
+    if count == 0 then return false, "no hay ningún ajuste" end
+    local previous = {navigator = self.saved.navigator, autoSelect = self.saved.autoSelect}
+    for key, value in pairs(values) do self.saved[key] = value end
+    for key, mode in pairs(filters) do self.saved.filters[filterKeys[key]] = mode end
+    self:ApplyImportedSettings(values, previous)
+    return true, count
+end
+
+-- Re-applies everything the settings touch, as the switches would.
+-- `imported` (optional): the keys that came in the text; `previous`: navigator / autoSelect before the import.
+function ns:ApplyImportedSettings(imported, previous)
+    imported, previous = imported or {}, previous or {}
+    local saved = self.saved
+    if self.ApplySkin then self:ApplySkin(true) end
+    if self.ApplyArrowStyle then self:ApplyArrowStyle() end
+    if self.arrow and type(saved.arrowPosition) == "table" then
+        self.arrow:ClearAllPoints()
+        self.arrow:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", saved.arrowPosition.x, saved.arrowPosition.y)
+    end
+    if self.frame then
+        self.frame:SetSize(saved.hudWidth or 510, saved.hudHeight or 172)
+        -- The imported position was saved at the imported text size: scale first, then place. A text size
+        -- without a position converts this character's saved position, as ApplyTextSize does.
+        local scale, old = TEXT_SCALE[self:TextSize()], self.hudScale or 1
+        local position = saved.hudPosition
+        if imported.textSize ~= nil and imported.hudPosition == nil and scale ~= old and type(position) == "table"
+            and type(position.x) == "number" and type(position.y) == "number" then
+            position.x, position.y = position.x * old / scale, position.y * old / scale
+        end
+        self.frame:SetScale(scale)
+        self.hudScale = scale
+        if type(saved.hudPosition) == "table" then
+            self.frame:ClearAllPoints()
+            self.frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", saved.hudPosition.x, saved.hudPosition.y)
+        end
+    end
+    self:SetBackgroundOpacity(saved.backgroundOpacity)
+    if saved.autoNavigate == false and self.ClearWaypoint then self:ClearWaypoint() end
+    -- The navigator goes through its switch (moves the active destination to the new arrow).
+    if imported.navigator ~= nil and self.SetNavigator then self:SetNavigator(saved.navigator, true) end
+    self:SetHUDMode(saved.hudMode, saved.visibleCount)
+    if self.Refresh then self:Refresh() end
+    if imported.autoSelect ~= nil and imported.autoSelect ~= previous.autoSelect and self.CheckZone then self:CheckZone() end
+    if self.RefreshMinimapPins then self:RefreshMinimapPins() end
+    self:RenderOptions()
+end
+
+function ns:ShowExport()
+    return self:ShowTextWindow("Exportar configuración", self:ExportSettings(), nil,
+        "Copia este texto (Ctrl+A, Ctrl+C) y pégalo en Importar en otro personaje. No incluye el progreso.")
+end
+
+function ns:ShowImport()
+    return self:ShowTextWindow("Importar configuración", "", function(body)
+        local ok, detail = ns:ImportSettings(body)
+        if ok then
+            ns:Print("Configuración importada (" .. detail .. " ajustes).")
+            if ns.textWindow then ns.textWindow:Hide() end
+        else
+            ns:Print("No se importó nada: " .. tostring(detail) .. ".")
+        end
+    end, "Pega aquí el texto exportado y pulsa Aplicar. Si algo no es válido no se cambia nada.")
 end

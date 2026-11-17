@@ -114,14 +114,10 @@ applyFrame = function(entry, skin)
     end
 end
 
--- Tactico: its buttons are solid turquoise, so their text is navy blue (pale text on turquoise is hard to
--- read). Only the roles listed here change; the dark panel is untouched. HUD.lua keeps these fills (and
--- the selected-row tint) at their own alpha instead of the panel opacity.
-local NAVY = {0.0627, 0.1255, 0.3137, 1}
-local TACTICO_BUTTONS = {
-    button = {0.2392, 0.8784, 0.7843, 1}, hover = {0.4549, 0.9294, 0.8588, 1},
-    buttonBorder = {0.1020, 0.5686, 0.5059, 1}, buttonText = NAVY, buttonSub = {0.0627, 0.1255, 0.3137, 1},
-}
+-- A skin may bring colors of its own for its buttons (Skins.lua `buttonOverrides`, data of the generator).
+-- Today only Táctico does: solid turquoise buttons with navy text, because pale text on turquoise is hard to
+-- read. Only the roles listed there change; the panel is untouched. HUD.lua keeps the fills the skin lists in
+-- `ownAlpha` at their own alpha instead of the panel opacity. Nothing here knows the name of a skin.
 
 -- ------------------------------------------------------------------------------ applying a skin
 function ns:ApplySkin(quiet)
@@ -136,11 +132,10 @@ function ns:ApplySkin(quiet)
     end
     local sub = palette.buttonSub
     sub[1], sub[2], sub[3], sub[4] = 0.5, 0.5, 0.5, 1
-    if key == "tactico" then
-        for role, color in pairs(TACTICO_BUTTONS) do
-            local target = palette[role]
-            target[1], target[2], target[3], target[4] = color[1], color[2], color[3], color[4]
-        end
+    for role, color in pairs(skin.buttonOverrides or {}) do
+        local target = palette[role]
+        if not target then target = {}; palette[role] = target end
+        target[1], target[2], target[3], target[4] = color[1], color[2], color[3], color[4]
     end
     for _, entry in ipairs(tinted) do
         local c = palette[entry[2]]

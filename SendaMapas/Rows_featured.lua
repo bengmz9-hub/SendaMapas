@@ -4,7 +4,8 @@
 -- and, when open, the objectives as progress bars (label left, have/need right, a 3 px bar underneath).
 -- The other rows are a compact ledger: number and name on the left, the state chip at the right, the
 -- instruction below, and the information as plain lines. The second row starts with the small caption
--- "SIGUIENTES MISIONES EN ESTE MAPA" that separates the card from the list.
+-- "SIGUIENTES MISIONES EN ESTE MAPA" that separates the card from the list. A quiet "+" / "-" says the row
+-- unfolds on click: at the right end of the name in the card, between the name and the chip in the ledger.
 local _, ns = ...
 local kit = ns.RowKit
 if not (kit and kit.proposedLayouts) then return end
@@ -32,7 +33,9 @@ local function featuredCard(self, item, row, rowWidth)
         kit.rect(row, "rule", "divider", x0, y, inner, 1, "ARTWORK", 0)
         y = y + 1 + 5
     end
-    y = y + kit.write(row, row.title, kit.BIG, "title", kit.name(item), x0, y, inner) + 4
+    local signWidth = item.state ~= "empty" and kit.SIGN or 0
+    if signWidth > 0 then kit.sign(row, item, "footer", x0 + inner - 10, y + 2) end
+    y = y + kit.write(row, row.title, kit.BIG, "title", kit.name(item), x0, y, inner - signWidth) + 4
     y = y + kit.write(row, row.instruction, nil, "instruction", kit.action(item, nil, "coords"), x0, y, inner)
     if item.lines then
         y = y + 6
@@ -66,7 +69,9 @@ local function ledgerRow(self, item, row, rowWidth, index)
     local chipWidth = math.max(46, kit.labelWidth(label, 6.4, 12))
     kit.chip(row, "chip", item, rowWidth - x0 - chipWidth, y, true, chipWidth)
     local nameX = x0 + ordinalWidth + 5
-    local nameHeight = kit.write(row, row.title, kit.NAME, "title", kit.name(item), nameX, y, rowWidth - x0 - chipWidth - 6 - nameX)
+    local nameRight = rowWidth - x0 - chipWidth - 6
+    kit.sign(row, item, "footer", nameRight - 10, y)
+    local nameHeight = kit.write(row, row.title, kit.NAME, "title", kit.name(item), nameX, y, nameRight - kit.SIGN - nameX)
     y = y + math.max(nameHeight, 15) + 3
     local instruction = kit.action(item, nil, "coords")
     if item.meta ~= "" then instruction = ns.Esc("footer", item.meta .. " ·") .. " " .. instruction end

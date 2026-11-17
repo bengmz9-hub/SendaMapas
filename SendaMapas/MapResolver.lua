@@ -31,8 +31,21 @@ end
 
 -- Two lookup tables: instances (dungeon group) and the open world. When the
 -- names collide, the earlier map in progression order wins.
+-- Without localized names the tables are kept as a provisional answer and rebuilt at most every RETRY
+-- seconds (or after a zone change), not on every call.
+local RETRY = 30
+local function now() return ns.Call(GetTime) end
+
+local function retryDue(at)
+    if at == nil then return true end
+    if at == false then return false end                  -- marked without a clock: wait for a zone change
+    local t = now()
+    return type(t) == "number" and t - at >= RETRY      -- without a clock: only after a zone change
+end
+
 function ns:ZoneNameTables()
     if self.zoneNames then return self.zoneNames end
+    if self.zoneNamesTemp and not retryDue(self.zoneNamesTemp.at) then return self.zoneNamesTemp.tables end
     local world, instance, localized = {}, {}, false
     for _, zoneId in ipairs(self.Index.order) do
         local info = self.Index.maps[zoneId]
@@ -45,8 +58,9 @@ function ns:ZoneNameTables()
         end
     end
     local tables = {world = world, instance = instance}
-    -- Without localized names yet, rebuild next time (client data may arrive later).
-    if localized then self.zoneNames = tables end
+    -- Without localized names yet, rebuild later (client data may arrive later).
+    if localized then self.zoneNames, self.zoneNamesTemp = tables, nil
+    else self.zoneNamesTemp = {tables = tables, at = now() or false} end
     return tables
 end
 
@@ -76,7 +90,43 @@ function ns:ZoneForUiMap(map)
 end
 
 -- Returns zoneId (or nil) and the first name seen, for messages.
+-- Zones of the game that have no quests in the current data: ns.Index.missingMaps, written by the data
+-- generator (it may not exist yet; then nothing changes). Accepted shapes, all read defensively:
+-- {[zoneId] = {n = "Name", ui = uiMapId}}, {[zoneId] = "Name"} or a list {{id = zoneId, n = "Name", ui = uiMapId}}.
+local function missingEntries()
+    local list, source = {}, ns.Index and ns.Index.missingMaps
+    if type(source) ~= "table" then return list end
+    for key, value in pairs(source) do
+        local id, name, ui
+        if type(value) == "table" then
+            id = value.id or value.z or (type(key) == "number" and key or nil)
+            name, ui = value.n or value.name, value.ui or value.uiMap
+        elseif type(value) == "string" then
+            id, name = type(key) == "number" and key or nil, value
+        end
+        if type(name) == "string" and name ~= "" then list[#list + 1] = {id = id, name = name, ui = ui} end
+    end
+    return list
+end
+
+-- The missing zone the player is in (by UI map, then by name), with its name for messages, or nil.
+function ns:MissingZone(chain, names)
+    for _, entry in ipairs(missingEntries()) do
+        local hit = false
+        for _, link in ipairs(chain or {}) do if entry.ui and link.map == entry.ui then hit = true end end
+        if not hit then
+            local keys = {normalize(entry.name), entry.id and normalize(areaName(entry.id)) or nil}
+            for _, seen in ipairs(names or {}) do
+                local key = normalize(seen.name)
+                if key and (key == keys[1] or key == keys[2]) then hit = true end
+            end
+        end
+        if hit then return {zone = entry.id, name = (entry.id and areaName(entry.id)) or entry.name} end
+    end
+end
+
 function ns:CurrentZoneId()
+    self.currentMissing = nil
     local names = {}
     local uiMap = self.Call(C_Map and C_Map.GetBestMapForUnit, "player")
     self.currentUiMap = uiMap
@@ -113,7 +163,26 @@ function ns:CurrentZoneId()
             return zone, entry.name
         end
     end
+    self.currentMissing = self:MissingZone(chain, names)
     return nil, names[1] and names[1].name
+end
+
+-- Root map (continent or world) above the player's current map.
+function ns:RootUiMap()
+    local root, guard = self.Call(C_Map and C_Map.GetBestMapForUnit, "player"), 0
+    while root and guard < 8 do
+        local info = self.Call(C_Map and C_Map.GetMapInfo, root)
+        if type(info) ~= "table" or not info.parentMapID or info.parentMapID == 0 then break end
+        root, guard = info.parentMapID, guard + 1
+    end
+    return root
+end
+
+-- Zone change (Core.lua): the map tree by name belongs to one root map, so it is dropped only when the
+-- root changed (another continent); "tried and empty" marks and provisional name tables are retried.
+function ns:ResetNameCaches()
+    self.uiMapsEmpty, self.zoneNamesTemp = nil, nil
+    if self.uiMapsByName and self.uiMapsRoot ~= self:RootUiMap() then self.uiMapsByName, self.uiMapsRoot = nil, nil end
 end
 
 -- UI map ID for a data zone. Uses the map seen while resolving the player's
@@ -122,21 +191,19 @@ function ns:UiMapForZone(zoneId, fallbackName)
     if self.uiMapForZone and self.uiMapForZone[zoneId] then return self.uiMapForZone[zoneId] end
     local known = self.Index.areaUi and self.Index.areaUi[zoneId]
     if known and mapExists(known) then return known end
-    if not self.uiMapsByName then
-        local root, guard = self.Call(C_Map and C_Map.GetBestMapForUnit, "player"), 0
-        while root and guard < 8 do
-            local info = self.Call(C_Map and C_Map.GetMapInfo, root)
-            if type(info) ~= "table" or not info.parentMapID or info.parentMapID == 0 then break end
-            root, guard = info.parentMapID, guard + 1
-        end
+    if not self.uiMapsByName and (not self.uiMapsEmpty or retryDue(self.uiMapsEmpty.at)) then
+        local root = self:RootUiMap()
         local children = root and self.Call(C_Map and C_Map.GetMapChildrenInfo, root, nil, true)
+        self.uiMapsEmpty = nil
         if type(children) == "table" and #children > 0 then
             local byName = {}
             for _, child in ipairs(children) do
                 local key = type(child) == "table" and normalize(child.name)
                 if key and not byName[key] then byName[key] = child.mapID end
             end
-            self.uiMapsByName = byName
+            self.uiMapsByName, self.uiMapsRoot = byName, root
+        else
+            self.uiMapsEmpty = {root = root, at = now() or false}    -- tried and empty: do not ask on every call
         end
     end
     local byName = self.uiMapsByName

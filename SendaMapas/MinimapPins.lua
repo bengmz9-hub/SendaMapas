@@ -8,7 +8,14 @@ local _, ns = ...
 local OUTDOOR = {[0] = 466 + 2/3, 400, 333 + 1/3, 266 + 2/3, 200, 133 + 1/3}   -- diameters in yards
 local INDOOR = {[0] = 300, 240, 180, 120, 80, 50}
 local EDGE = 0.9           -- fraction of the radius where pins stop and slide to the border
-local SIZE = {dest = 24, dot = 11, turnin = 18, available = 18, kill = 16, collect = 16}
+-- Minimap shape: GetMinimapShape (set by minimap addons; NOT CONFIRMED in 16001) other than "ROUND" means a
+-- square minimap, so pins stop at a square border; without the function the minimap is round as today.
+local function squareMinimap()
+    if type(GetMinimapShape) ~= "function" then return false end
+    local shape = ns.Call(GetMinimapShape)
+    return type(shape) == "string" and shape ~= "ROUND"
+end
+local SIZE = {dest = 24, dot = 11, turnin = 18, available = 18, kill = 16, collect = 16, entrance = 18}
 local MEDIA = "Interface\\AddOns\\" .. (ns.name or "SendaMapas") .. "\\Media\\"
 local ICON = {
     dest = MEDIA .. "Icon_Dest",
@@ -17,6 +24,7 @@ local ICON = {
     available = MEDIA .. "Icon_Available",
     kill = MEDIA .. "Icon_Kill",
     collect = MEDIA .. "Icon_Collect",
+    entrance = MEDIA .. "Icon_Dest",      -- dungeon entrance of an objective that is inside
 }
 
 local pool, targets = {}, {}
@@ -78,13 +86,66 @@ local function newPin(index)
     pin.glow2:SetVertexColor(1, 0.4, 0.0)
     pin.icon = pin:CreateTexture(nil, "ARTWORK")
     pin.icon:SetAllPoints(pin)
+    -- Tooltip of the quest pins (name, kind, reason). The mouse is only turned on for quest pins (not the
+    -- star nor its dots), and clicks must still reach the minimap: SetPassThroughButtons when the client
+    -- has it (NOT CONFIRMED in 16001), otherwise the click is handed to the minimap's own OnMouseUp.
+    -- The mouse and the pass-through are set in setPinMouse (never in combat).
+    pin:EnableMouse(false)
+    pin.passThrough, pin.passThroughTried, pin.wantMouse, pin.mouseOn = false, false, false, false
+    pin:SetScript("OnEnter", function(self) ns:ShowMinimapPinTooltip(self) end)
+    pin:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+    pin:SetScript("OnMouseUp", function(_, mouse)
+        if pin.passThrough or not Minimap or type(Minimap.GetScript) ~= "function" then return end
+        local ok, handler = pcall(Minimap.GetScript, Minimap, "OnMouseUp")
+        if ok and type(handler) == "function" then pcall(handler, Minimap, mouse) end
+    end)
     pool[index] = pin
     return pin
+end
+
+function ns:ShowMinimapPinTooltip(pin)
+    if not GameTooltip or not pin.questID then return false end
+    local q = self:Quest(pin.questID)
+    GameTooltip:SetOwner(pin, "ANCHOR_LEFT")
+    GameTooltip:SetText(q and q.n or ("Misión " .. tostring(pin.questID)))
+    local head = self.pinLabels and self.pinLabels[pin.kind]     -- the entrance pin carries its whole sentence
+    GameTooltip:AddLine(head and (head .. (pin.label and (": " .. pin.label) or "")) or (pin.label or ""), 1, 1, 1, true)
+    if q then GameTooltip:AddLine(self:QuestInfoLine(q), 0.7, 0.8, 0.9, true) end
+    GameTooltip:Show()
+    return true
 end
 
 local function hideAll()
     for _, pin in ipairs(pool) do pin:Hide() end
     ns.minimapShown = 0
+end
+
+-- Mouse of a pin: on only for quest pins. SetPassThroughButtons may be restricted in combat in some clients
+-- (NOT CONFIRMED in 16001; a blocked call raises no Lua error), so in combat neither it nor the mouse is
+-- touched: the pin stays without mouse and is set up at PLAYER_REGEN_ENABLED (see the driver below).
+-- passThrough is only true when the call was really made and succeeded.
+local function setPinMouse(pin, want)
+    pin.wantMouse = want
+    if want and ns.Call(InCombatLockdown) then
+        pin:EnableMouse(false)
+        pin.mouseOn = false
+        ns.minimapMousePending = true
+        return
+    end
+    if want and not pin.passThroughTried and type(pin.SetPassThroughButtons) == "function" then
+        pin.passThroughTried = true
+        pin.passThrough = pcall(pin.SetPassThroughButtons, pin, "LeftButton", "RightButton") and true or false
+    end
+    pin:EnableMouse(want)
+    pin.mouseOn = want
+end
+
+function ns:FinishMinimapMouse()
+    if not self.minimapMousePending or self.Call(InCombatLockdown) then return end
+    self.minimapMousePending = nil
+    for _, pin in ipairs(pool) do
+        if pin.wantMouse and not pin.mouseOn then setPinMouse(pin, true) end
+    end
 end
 
 -- Things to draw, in map terms: destination first, then the quest pins of the player's map.
@@ -105,28 +166,34 @@ function ns:CollectMinimapTargets()
         if zone and self.mapData[zone] then
             self:ReadLog()
             self.context = self:Context()
-            local ok, pins = pcall(self.CollectMapPins, self, map, zone)
+            local ok, pins = pcall(self.CachedStates, self, self.CollectMapPins, self, map, zone)
             if ok then
-                for _, pin in ipairs(pins) do list[#list+1] = {kind = pin.kind, map = map, x = pin.x, y = pin.y} end
+                for _, pin in ipairs(pins) do
+                    list[#list+1] = {kind = pin.kind, map = map, x = pin.x, y = pin.y, quest = pin.quest, label = pin.label}
+                end
             end
         end
     end
     return list
 end
 
--- 10 times a second: measure bearing and distance of every target and the minimap state.
+-- 10 times a second: measure bearing and distance of every target and the minimap state. The state table
+-- and the player's position are reused (measured once for all the targets), nothing is allocated per target.
+local measured, playerShared = {}, {}
 function ns:MeasureMinimapPins()
     local state
     if Minimap and self.saved and self.saved.minimapPins ~= false then
         local radius = viewRadius()
         if radius then
-            state = {radius = radius, rotate = cvar("rotateMinimap") == "1",
-                halfW = (Minimap:GetWidth() or 140) / 2, halfH = (Minimap:GetHeight() or 140) / 2}
+            state = measured
+            state.radius, state.rotate, state.square = radius, cvar("rotateMinimap") == "1", squareMinimap()
+            state.halfW, state.halfH = (Minimap:GetWidth() or 140) / 2, (Minimap:GetHeight() or 140) / 2
         end
     end
     self.minimapState = state
+    playerShared.done = nil
     for _, target in ipairs(targets) do
-        target.bearing, target.distance = self:ArrowVector(target)
+        target.bearing, target.distance = self:ArrowVector(target, playerShared)
     end
 end
 
@@ -134,17 +201,22 @@ end
 -- the rotating minimap instead of jumping.
 function ns:PlaceMinimapPins()
     local state = self.minimapState
-    if not state then hideAll(); return end
-    local radius, rotate, halfW, halfH = state.radius, state.rotate, state.halfW, state.halfH
+    -- Without a minimap state (symbols off, unknown radius) the route line goes too, not only the symbols.
+    if not state then hideAll(); self:PlaceMinimapRoute(); return end
+    local radius, rotate, halfW, halfH, square = state.radius, state.rotate, state.halfW, state.halfH, state.square
     local facing = self.Call(GetPlayerFacing)
-    if rotate and type(facing) ~= "number" then hideAll(); return end
+    if rotate and type(facing) ~= "number" then hideAll(); self:PlaceMinimapRoute(); return end
     local used, destX, destY = 0, nil, nil
+    -- Values shared by every pin of this frame; each pin only gets SetTexture/SetSize/SetFrameLevel/style
+    -- calls when its kind, the scale, the intensity or the minimap's level changed.
+    local scale, level = self:MinimapScale(), self:MarkIntensity()
+    local baseLevel = (Minimap.GetFrameLevel and Minimap:GetFrameLevel() or 1) + 8
     for _, target in ipairs(targets) do
         local bearing, distance = target.bearing, target.distance
         if bearing and distance then
             local angle = rotate and (bearing + facing) or bearing        -- clockwise, 0 = up on the minimap
             local rx, ry = distance * math.sin(angle) / radius, distance * math.cos(angle) / radius
-            local ratio = math.sqrt(rx * rx + ry * ry) / EDGE
+            local ratio = (square and math.max(math.abs(rx), math.abs(ry)) or math.sqrt(rx * rx + ry * ry)) / EDGE
             local show = true
             if ratio > 1 then
                 if target.kind == "dest" then rx, ry = rx / ratio, ry / ratio else show = false end
@@ -152,17 +224,25 @@ function ns:PlaceMinimapPins()
             if show then
                 used = used + 1
                 local pin = pool[used] or newPin(used)
-                local size = math.floor((SIZE[target.kind] or 24) * self:MinimapScale() / 100 + 0.5)
-                pin:SetSize(size, size)
-                pin.icon:SetTexture(ICON[target.kind])
-                local level = self:MarkIntensity()
-                if pin.styleLevel ~= level or pin.styleIcon ~= ICON[target.kind] then
-                    ns.StyleMark(pin, pin.icon, ICON[target.kind], level)
-                    pin.styleIcon = ICON[target.kind]
+                local kind = target.kind
+                local icon = ICON[kind]
+                local size = math.floor((SIZE[kind] or 24) * scale / 100 + 0.5)
+                if pin.appliedSize ~= size then pin:SetSize(size, size); pin.appliedSize = size end
+                if pin.appliedIcon ~= icon then pin.icon:SetTexture(icon); pin.appliedIcon = icon end
+                local restyle = pin.styleLevel ~= level or pin.styleIcon ~= icon
+                if restyle then
+                    ns.StyleMark(pin, pin.icon, icon, level)
+                    pin.styleIcon = icon
                 end
-                pin.glow:SetShown(target.kind == "dest")
-                if target.kind ~= "dest" then pin.glow2:Hide() end
-                pin:SetFrameLevel((Minimap.GetFrameLevel and Minimap:GetFrameLevel() or 1) + 8 + (target.kind == "dest" and 3 or 0))
+                if restyle or pin.appliedKind ~= kind then
+                    pin.glow:SetShown(kind == "dest")
+                    if kind ~= "dest" then pin.glow2:Hide() end
+                    if pin.appliedKind ~= kind then setPinMouse(pin, target.quest ~= nil) end   -- quest pins only
+                    pin.appliedKind = kind
+                end
+                pin.questID, pin.label = target.quest, target.label
+                local frameLevel = baseLevel + (kind == "dest" and 3 or 0)
+                if pin.appliedLevel ~= frameLevel then pin:SetFrameLevel(frameLevel); pin.appliedLevel = frameLevel end
                 pin:ClearAllPoints()
                 pin:SetPoint("CENTER", Minimap, "CENTER", rx * halfW, ry * halfH)
                 if target.kind == "dest" and not destX then destX, destY = rx * halfW, ry * halfH end
@@ -212,6 +292,9 @@ end
 
 local driver = CreateFrame("Frame")
 driver.elapsed, driver.sinceTargets = 0, 0
+pcall(driver.RegisterEvent, driver, "PLAYER_REGEN_ENABLED")
+driver:SetScript("OnEvent", function() ns:FinishMinimapMouse() end)      -- pins that appeared in combat
+ns.minimapDriver = driver
 driver:SetScript("OnUpdate", function(self, elapsed)
     if not ns.saved or not Minimap then return end
     if ns.saved.minimapPins == false and not ns.minimapState then return end      -- off and already cleared

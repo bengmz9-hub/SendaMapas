@@ -10,14 +10,14 @@ local function bounded(value, fallback, low, high)
     return math.max(low, math.min(high, math.floor(value + 0.5)))
 end
 
--- Tactico: solid turquoise buttons and the translucent selected-row tint keep their own alpha; only the dark
--- panel surfaces follow the opacity slider.
-local OWN_ALPHA = {button = true, hover = true, buttonBorder = true, rowSel = true, featuredBg = true}
+-- A skin can list fills that keep their own alpha (Skins.lua `ownAlpha`, data of the generator: Táctico's solid
+-- turquoise buttons and its translucent selected-row tint); every other surface follows the opacity slider.
 local function paint(target, method, key)
     local color = palette[key]
     local alpha = type(ns.saved.backgroundOpacity) == "number" and ns.saved.backgroundOpacity/100 or color[4]
-    if ns.skinKey == "tactico" and OWN_ALPHA[key] then alpha = color[4] end
-    if key == "border" and ns.SkinData and ns:SkinData().frame == "none" then alpha = 0 end    -- borderless skin
+    local skin = ns.SkinData and ns:SkinData()
+    if skin and skin.ownAlpha and skin.ownAlpha[key] then alpha = color[4] end
+    if key == "border" and skin and skin.frame == "none" then alpha = 0 end    -- borderless skin
     target[method](target, color[1], color[2], color[3], alpha)
 end
 
@@ -265,15 +265,14 @@ function ns:NewHudRow(index)
     if row.RegisterForClicks then row:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
     row:SetScript("OnClick", function(b, mouse)
         if not b.questID then return end
-        if mouse == "RightButton" then ns:Skip(b.questID) else ns:ClickQuest(b.questID) end
+        if mouse == "RightButton" then ns:Skip(b.questID)
+        elseif ns.Call(IsAltKeyDown) then ns:OpenChainLink(b.questID)       -- Alt+click: previous/next quest
+        else ns:ClickQuest(b.questID) end
     end)
     row:SetScript("OnEnter", function(b)
         if not GameTooltip or not b.questID then return end
-        local q = ns:Quest(b.questID)
         GameTooltip:SetOwner(b, "ANCHOR_CURSOR")
-        GameTooltip:SetText(q and q.n or tostring(b.questID))
-        GameTooltip:AddLine("Clic: abrir o cerrar la información de la misión", 0.6, 0.8, 0.9, true)
-        GameTooltip:AddLine("Clic derecho: saltar esta misión (/smapas restaurar las devuelve)", 0.6, 0.8, 0.9, true)
+        ns:FillQuestTooltip(GameTooltip, b.questID)          -- Navigation.lua
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -407,7 +406,24 @@ function ns:CreateUI()
     end)
     self.hudMark:ClearAllPoints()
     self.hudMark:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14, 8)
+    -- The main action of the panel wears the "primary" roles of the skin instead of the plain button ones
+    -- (its text stays in buttonText). Under the mouse: the hover fill and the selection border.
+    for _, entry in ipairs(self.hudSurfaces) do
+        if entry.target == self.hudMark then
+            entry.key = entry.method == "SetBackdropColor" and "primary" or "primaryBorder"
+            paint(entry.target, entry.method, entry.key)
+        end
+    end
+    if self.hudMark.SetBackdrop then
+        self.hudMark:SetScript("OnEnter", function(b)
+            paint(b, "SetBackdropColor", "hover"); paint(b, "SetBackdropBorderColor", "selBorder")
+        end)
+        self.hudMark:SetScript("OnLeave", function(b)
+            paint(b, "SetBackdropColor", "primary"); paint(b, "SetBackdropBorderColor", "primaryBorder")
+        end)
+    end
     self:CreateHUDSettings()
+    if self.ApplyTextSize then self:ApplyTextSize() end            -- Tamaño del texto (Options.lua)
     self:SetBackgroundOpacity(self.saved.backgroundOpacity)
     self.resizeHandles = self:CreateResizeHandles(f, function() ns.resizing = true end, function() ns:FinishHUDResize() end)
     f:SetScript("OnSizeChanged", function(_, width)
@@ -441,7 +457,7 @@ function ns:RenderHUDBody()
         end
     end
     add(self.selected, true)
-    for _, id in ipairs(ids) do add(id) end
+    for _, id in ipairs(self:ListOrder(ids)) do add(id) end     -- progression, or by distance (Navigation.lua)
 
     local width = bounded(self.frame:GetWidth(), 510, 360, 900)
     local rowWidth = width - 28
@@ -459,7 +475,7 @@ function ns:RenderHUDBody()
             item.selected = id == self.selected
             item.name = q and q.n or tostring(id)
             item.tags = q and self:TagsText(q) or ""
-            item.stateLabel = self.labels[state] or state
+            item.stateLabel = self:StateLabel(state)          -- with the optional symbol (UI.lua)
             item.meta, item.action = meta, action
             item.title = (item.selected and ns.Esc("accent", "> ") or "") .. ordinal .. " · " ..
                 ns.Esc(stateRole, item.stateLabel) .. " · " .. item.name .. item.tags
@@ -528,12 +544,17 @@ function ns:RenderHUDBody()
     self.hudOpenAll.label:SetText(self.saved.openAll and "Cerrar todas" or "Abrir todas")
     local step, total, completed, all = self:MapProgress()
     local where = ""
-    if self.currentZone and self.currentZone ~= zoneId then where = " · Estás en " .. self:MapLabel(self.currentZone) end
+    if self.currentZone and self.currentZone ~= zoneId then where = " · Estás en " .. self:MapLabel(self.currentZone)
+    elseif not self.currentZone and self.currentMissing then
+        where = " · " .. self.currentMissing.name .. ": zona sin misiones registradas en la base actual"
+    end
     local summary = self:MapSummary()
     self.hudFooter:SetText("Misión " .. step .. "/" .. total .. " · " .. completed .. "/" .. all .. " entregadas · " ..
         summary.active .. " por completar" .. (summary.turnin > 0 and (" · " .. summary.turnin .. " para entregar") or "") ..
         (self.saved.autoSelect and "" or " · mapa fijo") ..
+        (self.manualZone and self.saved.autoSelect and " · mapa elegido (se sigue el de la zona al cambiar)" or "") ..
         (self:SkippedCount() > 0 and (" · " .. self:SkippedCount() .. " saltadas (/smapas restaurar)") or "") .. where)
     self.hudRenderedWidth = width
+    if self.UpdateErrorBadge then self:UpdateErrorBadge() end      -- [!] next to Opciones (Errores.lua)
     self:LayoutHUD(width)
 end

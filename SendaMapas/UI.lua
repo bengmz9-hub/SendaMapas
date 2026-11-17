@@ -209,3 +209,43 @@ function ns:Render()
     end
     self:RenderHUD()
 end
+
+-- Optional symbols next to the state word (option "Símbolos de estado", off by default), so the state is
+-- not told only by color: [!] Recoger, [*] En curso, [?] Entregar, [v] Entregada (ASCII: the game fonts
+-- may draw other glyphs as squares).
+ns.stateSymbols = {available = "[!]", active = "[*]", turnin = "[?]", done = "[v]"}
+function ns:StateLabel(state)
+    local label = labels[state] or tostring(state)
+    local symbol = self.saved and self.saved.stateSymbols and self.stateSymbols[state]
+    return symbol and (symbol .. " " .. label) or label
+end
+
+-- Key bindings (Bindings.xml, loaded by the game from the addon folder). Names shown in the game's
+-- Key Bindings window; each binding calls SendaMapas:BindingAction(<action>).
+BINDING_HEADER_SENDAMAPAS = "Senda Mapas"
+BINDING_NAME_SENDAMAPAS_TOGGLE = "Mostrar u ocultar el panel"
+BINDING_NAME_SENDAMAPAS_NEXT = "Misión siguiente"
+BINDING_NAME_SENDAMAPAS_PREV = "Misión anterior"
+BINDING_NAME_SENDAMAPAS_MARK = "Marcar destino"
+BINDING_NAME_SENDAMAPAS_MAPS = "Selector de mapas"
+BINDING_NAME_SENDAMAPAS_SKIP = "Saltar la misión"
+
+ns.bindingActions = {
+    toggle = function() ns.frame:SetShown(not ns.frame:IsShown()) end,
+    next = function() ns:MoveQuest(1) end,
+    prev = function() ns:MoveQuest(-1) end,
+    mark = function()
+        if not ns.selected then return end
+        ns:Navigate(ns.selected)
+        if ns.ShowDestinationOnMap then ns:ShowDestinationOnMap() end
+    end,
+    maps = function() ns.frame:Show(); ns:ToggleMapPicker() end,
+    skip = function() ns:Skip() end,
+}
+
+function ns:BindingAction(action)
+    local fn = self.bindingActions[action]
+    if not fn or not self.saved or not self.frame then return false end
+    fn()
+    return true
+end

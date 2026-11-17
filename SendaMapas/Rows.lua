@@ -73,10 +73,14 @@ ns.RowLayouts.classic = {
         row.title:SetWidth(rowWidth - 4)
         row.instruction:SetWidth(rowWidth - 4)
         row.detail:SetWidth(rowWidth - 14)
-        row.title:SetText(item.title)
+        -- a quest row unfolds on click: its title ends with "+" (closed) or "-" (open). Text, not a piece:
+        -- the classic rows are made of the three base lines only.
+        local title = item.title
+        if item.state ~= "empty" then title = title .. "  " .. ns.Esc("muted", item.lines and "-" or "+") end
+        row.title:SetText(title)
         row.instruction:SetText(item.instruction)
         row.detail:SetText(item.detail or "")
-        local titleH = kit.textHeight(row.title, item.title, rowWidth - 4, item.primary and 7.2 or 6.4, item.primary and 15 or 13)
+        local titleH = kit.textHeight(row.title, title, rowWidth - 4, item.primary and 7.2 or 6.4, item.primary and 15 or 13)
         local instructionH = kit.textHeight(row.instruction, item.instruction, rowWidth - 4, 5.6, 12)
         local detailH = item.detail and kit.textHeight(row.detail, item.detail, rowWidth - 14, 5.6, 13) or 0
         row.activeBackground:ClearAllPoints()

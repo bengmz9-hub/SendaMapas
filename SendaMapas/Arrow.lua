@@ -12,10 +12,20 @@ local function normalize(angle)
 end
 ns.NormalizeAngle = normalize
 
+-- One reusable input vector (when the client's vectors can be changed with SetXY), instead of a new one
+-- per call: the arrow and the minimap ask about ten times a second per target.
+local scratch
+local function vectorAt(x, y)
+    if scratch and pcall(scratch.SetXY, scratch, x, y) then return scratch end
+    local vector = CreateVector2D(x, y)
+    if not scratch and type(vector) == "table" and type(vector.SetXY) == "function" then scratch = vector end
+    return vector
+end
+
 -- World position of a spot on a UI map: continent/instance id plus the two world axes (yards).
 local function worldPoint(map, x, y)
     if not (C_Map and C_Map.GetWorldPosFromMapPos and CreateVector2D) then return end
-    local ok, continent, position = pcall(C_Map.GetWorldPosFromMapPos, map, CreateVector2D(x, y))
+    local ok, continent, position = pcall(C_Map.GetWorldPosFromMapPos, map, vectorAt(x, y))
     if not ok or continent == nil or not position or not position.GetXY then return end
     local a, b = position:GetXY()
     if type(a) ~= "number" or type(b) ~= "number" then return end
@@ -39,21 +49,54 @@ local function mapAxes(map)
     axisCache[map] = axes
     return axes
 end
-function ns:ResetArrowCache() axisCache = {} end
+-- Generation of the cached world positions of destinations (see targetWorld); a reset (zone change,
+-- tests) makes every destination measure its world position again.
+local worldGen = 0
+function ns:ResetArrowCache() axisCache = {}; worldGen = worldGen + 1 end
+
+-- A destination does not move: its world position is remembered on the destination table itself while
+-- its map/x/y stay the same.
+local function targetWorld(dest)
+    if dest._wgen ~= worldGen or dest._wmap ~= dest.map or dest._wx ~= dest.x or dest._wy ~= dest.y then
+        local continent, a, b = worldPoint(dest.map, dest.x, dest.y)
+        if continent == nil then
+            dest._wgen = nil            -- failed (maybe only for a moment): not remembered, asked again next time
+            return nil
+        end
+        dest._wgen, dest._wmap, dest._wx, dest._wy = worldGen, dest.map, dest.x, dest.y
+        dest._wc, dest._wa, dest._wb = continent, a, b
+    end
+    return dest._wc, dest._wa, dest._wb
+end
+
+-- The player's map, map position and world position, measured once and shared by several destinations
+-- (`shared` is a table the caller empties before each measurement).
+local function playerPosition(self, shared)
+    if shared and shared.done then return shared.map, shared.px, shared.py, shared.pc, shared.pwx, shared.pwy, shared.reason end
+    local map, px, py, pc, pwx, pwy, reason = self.Call(C_Map and C_Map.GetBestMapForUnit, "player")
+    if not map then reason = "sin mapa"
+    else
+        local position = self.Call(C_Map.GetPlayerMapPosition, map, "player")
+        if position and position.GetXY then px, py = position:GetXY() end
+        if type(px) ~= "number" or type(py) ~= "number" or (px == 0 and py == 0) then reason = "sin posición"
+        else pc, pwx, pwy = worldPoint(map, px, py) end
+    end
+    if shared then
+        shared.done, shared.map, shared.px, shared.py, shared.pc, shared.pwx, shared.pwy, shared.reason =
+            true, map, px, py, pc, pwx, pwy, reason
+    end
+    return map, px, py, pc, pwx, pwy, reason
+end
 
 -- Returns bearing (radians, clockwise from north) and distance in yards (nil if unknown),
 -- or nil plus a reason ("otro continente", "otro mapa", "sin posición", "sin mapa").
 -- Same continent, different map: world coordinates. No path is computed across continents.
-function ns:ArrowVector(dest)
+-- `shared` (optional): see playerPosition.
+function ns:ArrowVector(dest, shared)
     if not dest then return nil, "sin destino" end
-    local map = self.Call(C_Map and C_Map.GetBestMapForUnit, "player")
-    if not map then return nil, "sin mapa" end
-    local position = self.Call(C_Map.GetPlayerMapPosition, map, "player")
-    local px, py
-    if position and position.GetXY then px, py = position:GetXY() end
-    if type(px) ~= "number" or type(py) ~= "number" or (px == 0 and py == 0) then return nil, "sin posición" end
-    local pc, pwx, pwy = worldPoint(map, px, py)
-    local tc, twx, twy = worldPoint(dest.map, dest.x, dest.y)
+    local map, px, py, pc, pwx, pwy, reason = playerPosition(self, shared)
+    if reason then return nil, reason end
+    local tc, twx, twy = targetWorld(dest)
     if pc ~= nil and tc ~= nil then
         if pc ~= tc then return nil, "otro continente" end
         local axes = mapAxes(map)

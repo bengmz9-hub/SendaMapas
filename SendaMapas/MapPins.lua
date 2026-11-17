@@ -16,11 +16,13 @@ local ICON = {
     collect = MEDIA .. "Icon_Collect",
 }
 local DEST_ICON = MEDIA .. "Icon_Dest"
+ICON.entrance = DEST_ICON          -- dungeon entrance of an objective that is inside (existing destination icon)
 local DOT_ICON = MEDIA .. "Icon_Dot"
 local MESH = MEDIA .. "Zone_Mesh"
 local ROUTE_ARROW = MEDIA .. "Route_Arrow"
 ns.mediaIcons = {icon = ICON, dest = DEST_ICON, dot = DOT_ICON, mesh = MESH}
 local LABEL = {available = "Recoger", turnin = "Entregar", kill = "Objetivo: matar", collect = "Objetivo: recoger/usar"}
+ns.pinLabels = LABEL     -- also the tooltip of the minimap pins
 
 -- Intensity of the marks: 1 normal, 2 intense (default), 3 maximum. It colors the glow of the
 -- destination and its banner; the icons are drawn once, sharp, with no extra layers on top.
@@ -107,7 +109,8 @@ local function newPin(index)
         local q = ns:Quest(self.questID)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(q and q.n or tostring(self.questID))
-        GameTooltip:AddLine((LABEL[self.kind] or "") .. (self.label and (": " .. self.label) or ""), 1, 1, 1, true)
+        local head = LABEL[self.kind]           -- the entrance pin carries its whole sentence in its label
+        GameTooltip:AddLine(head and (head .. (self.label and (": " .. self.label) or "")) or (self.label or ""), 1, 1, 1, true)
         if q then GameTooltip:AddLine(ns:QuestInfoLine(q), 0.7, 0.8, 0.9, true) end
         if self.kind == "available" then
             if self.locked then GameTooltip:AddLine(self.locked, 1, 0.6, 0.3, true) end
@@ -207,7 +210,19 @@ function ns:CollectMapPins(mapID, zone)
                     local obs = self:UnfinishedObjectives(q) or {}
                     local kindOf = {}
                     for _, ob in ipairs(obs) do kindOf[ob.n or ""] = ob.k end
-                    for _, spot in ipairs(spots) do add(kindOf[spot.name] == "kill" and "kill" or "collect", q, spot) end
+                    for _, spot in ipairs(spots) do
+                        if spot.entrance then
+                            -- Objective inside a dungeon: one destination pin at its entrance, no kill/collect pin.
+                            local key = "entrance:" .. q.i .. ":" .. spot.entrance
+                            if spot.map == mapID and not seen[key] then
+                                seen[key] = true
+                                list[#list+1] = {kind = "entrance", quest = q.i, x = spot.x, y = spot.y,
+                                    label = "Entrada de " .. spot.entrance .. ": el objetivo está dentro"}
+                            end
+                        else
+                            add(kindOf[spot.name] == "kill" and "kill" or "collect", q, spot)
+                        end
+                    end
                 end
             end
         elseif state == "turnin" then
@@ -229,7 +244,10 @@ end
 -- Areas where the unfinished objectives are (a gold mesh for kill and collect objectives), like the quest
 -- area of Blizzard's tracker. Always for the quest being followed; for every quest in the log when the
 -- pins are in "todo" mode. Each spawn point gets a soft disc of mesh; discs that overlap make one zone.
-local ZONE_COLOR = {kill = {1, 0.82, 0.25}, collect = {1, 0.82, 0.25}}   -- gold, like the area of the default quest tracker
+-- Kill areas red and collect/use areas blue, the colors of Icon_Kill and Icon_Collect (generar_iconos.py), so the
+-- two kinds are told apart by more than the icon (accessibility).
+local ZONE_COLOR = {kill = {0.95, 0.30, 0.22}, collect = {0.30, 0.62, 1.0}}
+ns.zoneColors = ZONE_COLOR
 local MAX_ZONES = 300
 local ZONE_SIZE = 0.05        -- disc diameter, as a fraction of the map width
 
@@ -244,7 +262,7 @@ function ns:CollectZoneAreas(mapID)
                 local kindOf = {}
                 for _, ob in ipairs(self:UnfinishedObjectives(q) or {}) do kindOf[ob.n or ""] = ob.k end
                 for _, spot in ipairs(spots) do
-                    if spot.map == mapID then
+                    if spot.map == mapID and not spot.entrance then      -- no mesh at a dungeon entrance
                         local kind = kindOf[spot.name] == "kill" and "kill" or "collect"
                         local key = kind .. string.format(":%.3f,%.3f", spot.x, spot.y)
                         if not seen[key] then
@@ -381,8 +399,11 @@ function ns:RefreshQuestPins()
     end
     self:ReadLog()
     self.context = self:Context()
-    if self.saved.mapZones ~= false then drawZones(parent, mapID) else hideZones() end
-    local ok, list = pcall(self.CollectMapPins, self, mapID, zone)
+    -- One state pass for the zones and the pins (both walk the quests of the log).
+    local ok, list = pcall(self.CachedStates, self, function()
+        if self.saved.mapZones ~= false then drawZones(parent, mapID) else hideZones() end
+        return self:CollectMapPins(mapID, zone)
+    end)
     if not ok then hideAll(); return end
     local scale = 1
     if parent.GetScale then

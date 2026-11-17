@@ -12,11 +12,32 @@ captura con comprobaciones contra una base local.
   de Wowhead permiten redistribuirlos. **Antes de publicar o compartir el
   paquete hay que comprobar esos términos** (y, si procede, pedir permiso o
   sustituir los datos).
+  Campos concretos del paquete que proceden de `guia-mapas-forever/` (rastreables
+  en `preparar_sendamapas.py`):
+  - En `SendaMapas/Index.lua` (de `MAPAS_INDICE.json` y `mapas/*.json`):
+    `source` (`capturedAt`), `order` (`progressionOrder.mergedWorldOrder` y
+    `dungeons`), `maps[zoneId]` (`n` `name`, `g` `continentGroup`, `k`
+    `instanceType`, `lo`/`hi` `wowheadMinLevel`/`wowheadMaxLevel`, `lb`
+    `wowheadLevelRangeLabel`, `t` y `c` recuentos de misiones),
+    `missingMaps[zoneId]` (`name` de los 8 mapas `MISSING`) y `modules`
+    (agrupación y títulos).
+  - En `SendaMapas/Data/SendaMapas_*.lua` (de `mapas/*.json` en `compact_map`
+    y `entity`): `z` (`zoneId`/`zoneName` de inicio, entrega y spawns), `h`
+    (`hubs[].hubName`), `q[]` (`i` `id`, `n` `name`, `l` `level`, `r` `reqLevel`,
+    `x` `xp`, `f` máscara de `flags`, `sd` `side`, `h` índice de hub, `s`/`e`
+    entidades `start`/`end` con `k`/`i`/`n`/`z`/`zn`/`c`/`d`, `o`
+    `objectives.text`, `ot` nombres de `objectives.creatures`/`objects`/`items`,
+    `p`/`nx`/`ex` de `chain`, `c`/`ra`/`pf` de `flags`) y `lk`
+    (`chain.crossMapLinks`, completados con `QuestieDB` local cuando faltaban
+    nombre o zona en la captura).
 - **Posiciones de objetivos y tabla de zonas**: los campos `ob` de las
   misiones (puntos donde matar, recoger o usar, compactados a 6 puntos por zona
-  y objetivo) y la tabla `areaUi` del índice (zona del juego -> mapa de interfaz)
-  proceden de **QuestieDB** (https://github.com/Questie/QuestieDB, GPL-3.0),
-  leída sin ejecutarla en la instalación local de Forever el 15-11-2026. Son
+  y objetivo, más el campo opcional `e` con el nombre de la mazmorra cuando la
+  coordenada apunta a su entrada exterior) y la tabla `areaUi` del índice (zona
+  del juego -> mapa de interfaz) proceden de **QuestieDB**
+  (https://github.com/Questie/QuestieDB, GPL-3.0), leída sin ejecutarla desde la
+  copia fijada dentro del proyecto (`reutilizacion/20261108-203754/QuestieDB`,
+  huella verificada en `MODULOS.md`). Son
   hechos del juego extraídos y reducidos por los scripts de
   `datos-navegacion/scripts`; no se incluye código ni la base completa de
   Questie, y **SendaMapas no necesita Questie ni ningún otro addon para

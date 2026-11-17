@@ -6,6 +6,7 @@
 --   row width >= 672 : the level data gets a second right column and leaves the action line
 -- Even rows have a faint zebra fill; the selected row has the accent tint and a 1 px line above and below.
 -- The information shows every objective as a progress bar (label left, have/need right, 3 px bar).
+-- A quiet "+" / "-" closes the name cell (before the right columns) and says the row unfolds on click.
 local _, ns = ...
 local kit = ns.RowKit
 if not (kit and kit.proposedLayouts) then return end
@@ -43,6 +44,8 @@ ns.RowLayouts.table = {
         end
         if not empty then
             kit.line(row, "number", kit.NAME, "muted", tostring(item.ordinal), 5, y + (primary and 3 or 0), 23, "RIGHT")
+            nameWidth = nameWidth - kit.SIGN
+            kit.sign(row, item, "muted", TEXT_X + nameWidth + 4, y + (primary and 2 or 0))
         end
         y = y + kit.write(row, row.title, nameFont, "title", title, TEXT_X, y, nameWidth) + 1
 

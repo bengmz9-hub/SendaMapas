@@ -60,9 +60,16 @@ function ns:Context()
         local ok, faction = pcall(UnitFactionGroup, "player")
         if ok then c.faction = faction end
     end
+    -- Inside a state pass (ns:CachedStates) the answer is remembered, so the several walks over the quests
+    -- of one refresh ask the game once per quest. Outside a pass the game is always asked.
     c.completed = function(id)
         if ns.completedSet and ns.completedSet[id] then return true end
-        return ns.Call((C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted) or IsQuestFlaggedCompleted, id)
+        local cache = ns.stateCache
+        local memo = (cache and cache.context == c) and cache.completed or nil
+        if memo and memo[id] ~= nil then return memo[id] end
+        local value = ns.Call((C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted) or IsQuestFlaggedCompleted, id)
+        if memo and value ~= nil then memo[id] = value end
+        return value
     end
     c.active = function(id)
         if ns.log and ns.log[id] then return true end
@@ -79,10 +86,43 @@ function ns:Context()
     return c
 end
 
+-- State pass: Refresh, the HUD render it triggers, the summaries and the pins walk the same quests several
+-- times. While ns:CachedStates runs, the state of each quest (and the game's "completed" answer) is asked
+-- once and remembered; the cache is dropped when the pass ends, when the context changes and on
+-- InvalidateStates() (completed list, skipped quests). Outside a pass nothing is cached, so the results are
+-- exactly those without the cache.
+local function freshCache(context) return {context = context, states = {}, completed = {}} end
+
+function ns:InvalidateStates()
+    if self.stateCache then self.stateCache = freshCache(self.context) end
+end
+
+local function endPass(self, ok, ...)
+    self.stateCache = nil
+    if not ok then error((...), 0) end
+    return ...
+end
+
+-- Runs fn(...) inside a state pass and returns its results; an error still ends the pass.
+function ns:CachedStates(fn, ...)
+    if self.stateCache then return fn(...) end          -- already inside a pass: share it
+    self.stateCache = freshCache(self.context)
+    return endPass(self, pcall(fn, ...))
+end
+
 function ns:EntryState(id)
     local q = self:Quest(id)
     if not q then return "unknown", "Los datos de este mapa no están cargados." end
-    return self.Filters.Evaluate(q, self.context)
+    local cache = self.stateCache
+    if not cache then return self.Filters.Evaluate(q, self.context) end
+    if cache.context ~= self.context then
+        cache.context, cache.states, cache.completed = self.context, {}, {}
+    end
+    local hit = cache.states[id]
+    if hit then return hit[1], hit[2], hit[3] end
+    local state, reason, extra = self.Filters.Evaluate(q, self.context)
+    cache.states[id] = {state, reason, extra}
+    return state, reason, extra
 end
 
 -- Visible quests of the active map, in the module's stored order.
@@ -136,6 +176,7 @@ function ns:LoadCompleted()
     end
     for id in pairs(self.saved and self.saved.turnedIn or {}) do set[id] = true end
     self.completedSet = set
+    if self.InvalidateStates then self:InvalidateStates() end    -- the completed quests changed
     return count
 end
 
@@ -164,7 +205,10 @@ function ns:UpdateProgress()
     self.selected = nil
     self:Refresh()
     if not summarized then self:PrintMapSummary() end
-    if not zone then self:Print("No se reconoce el mapa actual: se mantiene " .. self:MapLabel(self.saved.map) .. ".") end
+    if not zone then
+        self:Print((self.currentMissing and (self.currentMissing.name .. ": zona sin misiones registradas en la base actual")
+            or "No se reconoce el mapa actual") .. "; se mantiene " .. self:MapLabel(self.saved.map) .. ".")
+    end
     self:Print(fromApi > 0 and ("Lectura de misiones completadas: " .. fromApi .. " en esta cuenta del personaje.") or
         "El cliente no dio la lista de misiones completadas; se usa el estado misión a misión.")
     local q = self.selected and self:Quest(self.selected)
@@ -179,11 +223,13 @@ function ns:UpdateProgress()
     end
 end
 
-function ns:Refresh()
-    if not self.saved then return end
+local function refresh(self)
     self:ReadLog()
     self.context = self:Context()
+    if self.CheckProgressSounds then self:CheckProgressSounds() end
     local ids = self:Entries()
+    -- Order "cercania": measured here only, so the list does not reorder while the player walks (Navigation.lua).
+    self.nearOrder = self.saved.listOrder == "cercania" and self.NearOrder and self:NearOrder(ids) or nil
     local markedBefore = self.markerQuest
     if self.selected and self.context.completed(self.selected) then self.selected = nil end
     if self.selected and self.saved.hideTurnin and self:EntryState(self.selected) == "turnin" then self.selected = nil end
@@ -196,6 +242,11 @@ function ns:Refresh()
     end
     if self.AutoNavigate then self:AutoNavigate() end
     if self.RefreshMapPins then self:RefreshMapPins() end
+end
+
+function ns:Refresh()
+    if not self.saved then return end
+    self:CachedStates(refresh, self)
 end
 
 function ns:QueueRefresh()
@@ -229,6 +280,7 @@ function ns:Skip(id, quiet)
     local follow = self.markerQuest == id
     if follow then self:ClearWaypoint() end
     self.saved.skipped[id] = true
+    self:InvalidateStates()
     if self.selected == id then self.selected = nil end
     self:Refresh()
     if follow and self.selected then self:Navigate(self.selected) end
@@ -241,6 +293,7 @@ end
 
 function ns:RestoreChoices()
     self.saved.skipped = {}
+    self:InvalidateStates()
     self.selected = nil
     self:Refresh()
 end
@@ -316,6 +369,79 @@ function ns:SetAutoSelect(enabled)
     if self.RenderFilterOptions then self:RenderFilterOptions() end
 end
 
+-- SavedVariables schema. Migrate() runs at every load and is idempotent.
+-- Pruning criterion (documented for the report):
+--  * expanded (which quests have their information open) is only a convenience: entries that are not
+--    `id = true` are dropped, and if more than EXPANDED_MAX remain it starts empty again.
+--  * turnedIn (hand-ins this addon saw): an id is removed only when the game's own completed list
+--    (C_QuestLog.GetAllCompletedQuestIDs or GetQuestsCompleted) already contains it, because that list is
+--    read again at every login. Ids the game does not list are kept, so no hand-in is ever lost; without
+--    that list nothing is removed.
+ns.SCHEMA = 1
+local EXPANDED_MAX = 200
+
+function ns:Migrate()
+    local saved = self.saved
+    if not saved then return end
+    local count = 0
+    for id, value in pairs(saved.expanded) do
+        if value ~= true or type(id) ~= "number" then saved.expanded[id] = nil else count = count + 1 end
+    end
+    if count > EXPANDED_MAX then saved.expanded = {} end
+    local confirmed
+    local ids = self.Call(C_QuestLog and C_QuestLog.GetAllCompletedQuestIDs)
+    if type(ids) == "table" and #ids > 0 then
+        confirmed = {}
+        for _, id in ipairs(ids) do confirmed[id] = true end
+    else
+        local legacy = self.Call(GetQuestsCompleted)
+        if type(legacy) == "table" and next(legacy) ~= nil then confirmed = legacy end
+    end
+    if confirmed then
+        for id in pairs(saved.turnedIn) do if confirmed[id] then saved.turnedIn[id] = nil end end
+    end
+    saved.schema = self.SCHEMA
+end
+
+-- /smapas api: which of the game functions this addon uses exist in this client (one line per group).
+local API_GROUPS = {
+    {label = "C_QuestLog", space = "C_QuestLog", names = {"GetAllCompletedQuestIDs", "ReadyForTurnIn", "IsComplete",
+        "GetInfo", "GetQuestObjectives", "IsQuestFlaggedCompleted"}},
+    {label = "C_GossipInfo", space = "C_GossipInfo", names = {"GetActiveQuests", "SelectActiveQuest"}},
+    {label = "Gossip antiguo", names = {"GetGossipActiveQuests", "SelectGossipActiveQuest"}},
+    {label = "C_Map", space = "C_Map", names = {"GetWorldPosFromMapPos", "GetAreaInfo", "GetMapChildrenInfo"}},
+    {label = "Minimapa", names = {"C_Minimap.GetViewRadius", "GetMinimapShape"}},
+    {label = "Otras", names = {"GetQuestsCompleted", "GetTitleText", "GetQuestID"}},
+}
+
+local function apiExists(space, name)
+    local container = _G
+    if space then container = _G[space] end
+    local dotted, field = name:match("^([%w_]+)%.([%w_]+)$")
+    if dotted then container, name = _G[dotted], field end
+    return type(container) == "table" and type(container[name]) == "function"
+end
+
+function ns:ApiSupport()
+    local lines = {}
+    for _, group in ipairs(API_GROUPS) do
+        local parts = {}
+        if group.space and type(_G[group.space]) ~= "table" then
+            parts[1] = "no existe"
+        else
+            for _, name in ipairs(group.names) do
+                parts[#parts + 1] = name .. " " .. (apiExists(group.space, name) and "sí" or "no")
+            end
+        end
+        lines[#lines + 1] = "API " .. group.label .. ": " .. table.concat(parts, " · ")
+    end
+    return lines
+end
+
+function ns:PrintApiSupport()
+    for _, line in ipairs(self:ApiSupport()) do self:Print(line) end
+end
+
 function ns:Initialize()
     if type(SendaMapasDB) ~= "table" then SendaMapasDB = {} end
     self.saved = SendaMapasDB
@@ -323,6 +449,7 @@ function ns:Initialize()
         if type(self.saved[key]) ~= "table" then self.saved[key] = {} end
     end
     if self.InitErrors then self:InitErrors() end
+    self:Migrate()
     self.Filters.Normalize(self.saved.filters)
     if self.saved.autoSelect == nil then self.saved.autoSelect = true end
     if self.saved.autoNavigate == nil then self.saved.autoNavigate = true end
@@ -340,6 +467,11 @@ function ns:Initialize()
     -- Map payloads are chosen once the player position is known.
     if type(IsLoggedIn) ~= "function" or self.Call(IsLoggedIn) then self:CheckZone() end
     self:Print("Alpha cargada. /smapas abre el panel; /smapas mapas elige mapa.")
+    if not self.saved.firstRunDone then
+        self.saved.firstRunDone = true
+        self:Print("Primera vez: la entrega automática de misiones terminadas está activada (Shift la pausa; " ..
+            "/smapas autoentregar no la quita). El aspecto y el resto están en /smapas opciones.")
+    end
 end
 
 local events = CreateFrame("Frame")
@@ -355,6 +487,9 @@ events:SetScript("OnEvent", function(_, event, name)
         if C_Timer and C_Timer.After then C_Timer.After(0.5, function() ns:StartupLoad() end)
         else ns:StartupLoad() end
     elseif event == "ZONE_CHANGED_NEW_AREA" then
+        ns.manualZone = nil          -- a real zone change: the automatic follow decides again
+        if ns.ResetNameCaches then ns:ResetNameCaches() end
+        if ns.ResetArrowCache then ns:ResetArrowCache() end
         if C_Timer and C_Timer.After then C_Timer.After(0.5, function() ns:CheckZone() end)
         else ns:CheckZone() end
     elseif event == "QUEST_TURNED_IN" then
@@ -362,10 +497,11 @@ events:SetScript("OnEvent", function(_, event, name)
         if type(name) == "number" then
             ns.saved.turnedIn[name] = true
             if ns.completedSet then ns.completedSet[name] = true end
+            ns:InvalidateStates()
         end
         ns:QueueRefresh()
     elseif event == "PLAYER_REGEN_ENABLED" then
-        if ns.pendingZone then ns.pendingZone = nil; ns:CheckZone() end
+        if ns.pendingZone then ns.pendingZone = nil; ns.manualZone = nil; ns:CheckZone() end
     else
         ns:QueueRefresh()
     end
@@ -375,12 +511,15 @@ SLASH_SENDAMAPAS1 = "/smapas"
 SlashCmdList.SENDAMAPAS = function(message)
     local command = (message or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
     if command == "test" then if ns.SelfTest then ns:SelfTest() end; return end
+    if command == "api" then ns:PrintApiSupport(); return end
     if not ns.frame then ns:Print("No se pudo iniciar. Reinstala el paquete completo."); return end
     if command == "mapas" then ns.frame:Show(); ns:ToggleMapPicker()
     elseif command == "aqui" or command == "actual" then
         ns.frame:Show()
         local zone, seen = ns:CurrentZoneId()
-        if zone then ns:LoadMap(zone) else ns:Print("No se reconoce el mapa actual (" .. tostring(seen or "?") .. "). Usa /smapas mapas.") end
+        if zone then ns:LoadMap(zone)
+        elseif ns.currentMissing then ns:Print(ns.currentMissing.name .. ": zona sin misiones registradas en la base actual. Usa /smapas mapas.")
+        else ns:Print("No se reconoce el mapa actual (" .. tostring(seen or "?") .. "). Usa /smapas mapas.") end
     elseif command:match("^mapa %d+$") then ns:LoadMap(tonumber(command:match("^mapa (%d+)$"))); ns.frame:Show()
     elseif command == "siguiente" then ns:MoveMap(1); ns.frame:Show()
     elseif command == "anterior" then ns:MoveMap(-1); ns.frame:Show()
@@ -397,6 +536,12 @@ SlashCmdList.SENDAMAPAS = function(message)
     elseif command == "restaurar" then ns:RestoreChoices()
     elseif command == "malla on" or command == "malla off" then ns:SetMapExtra("mapZones", command == "malla on")
     elseif command == "ruta on" or command == "ruta off" then ns:SetMapExtra("mapRoute", command == "ruta on")
+    elseif command:match("^texto %S+$") then ns:SetTextSize(command:match("^texto (%S+)$"))
+    elseif command == "orden" or command:match("^orden %S+$") then ns:SetListOrder(command:match("^orden (%S+)$"))
+    elseif command == "sonido on" or command == "sonido off" then ns:SetProgressSound(command == "sonido on")
+    elseif command == "simbolos on" or command == "simbolos off" or command == "s\195\173mbolos on" or command == "s\195\173mbolos off" then
+        ns:SetStateSymbols(command:match("on$") ~= nil)
+    elseif command == "diagnostico" or command == "diagn\195\179stico" then ns:ShowDiagnostics()
     elseif command == "limpiar" then ns:ClearWaypoint()
     elseif command == "errores" then ns:PrintErrors()
     elseif command == "errores borrar" then ns:ClearErrors()

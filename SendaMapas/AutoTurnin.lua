@@ -12,11 +12,81 @@ end
 local waiting = {}
 
 -- Gossip window: the first finished quest among the ones this NPC takes.
+-- C_GossipInfo.SelectActiveQuest takes the questID in some clients and the gossip position in others (NOT
+-- CONFIRMED which one in 16001), so a cautious chain of attempts is used, at most once per window and quest:
+--   1. SelectActiveQuest(questID);
+--   2. ~0.6 s later, if no quest window opened (QUEST_PROGRESS / QUEST_COMPLETE) and the gossip is still
+--      open: SelectActiveQuest(position);
+--   3. another ~0.6 s later, same condition: the old SelectGossipActiveQuest(position), if it exists.
+-- Without C_Timer only step 1 happens. Each step checks Shift, the switch and the reward-choice waits again.
+local RETRY_DELAY = 0.6
+local tried = {}          -- questID/title -> true: the chain already ran for it in this gossip window (see OnEvent)
+local pending             -- the attempt being watched: {key, title, index, serial}
+local serial = 0
+ns.autoTurninTried = tried
+
+local function stillPending(token)
+    return pending and pending.serial == token and enabled() and not waiting[pending.title or pending.key]
+end
+
+local function later(token, fn)
+    if not (C_Timer and C_Timer.After) then pending = nil; return end
+    C_Timer.After(RETRY_DELAY, function() if stillPending(token) then fn() end end)
+end
+
+local function chain(key, title, index, first)
+    tried[key] = true
+    serial = serial + 1
+    local token = serial
+    pending = {key = key, title = title, index = index, serial = token}
+    first()
+    later(token, function()
+        if C_GossipInfo and C_GossipInfo.SelectActiveQuest then ns.Call(C_GossipInfo.SelectActiveQuest, index) end
+        later(token, function()
+            if type(SelectGossipActiveQuest) == "function" then ns.Call(SelectGossipActiveQuest, index) end
+            pending = nil
+        end)
+    end)
+end
+
+-- Old API: GetGossipActiveQuests() returns flat values per quest. The format is NOT CONFIRMED for 16001;
+-- only the 6-value layout (title, level, isTrivial, isComplete, isLegendary, isIgnored) is accepted, and
+-- only when every group has the expected types. Anything else: no action.
+local LEGACY_STRIDE = 6
+local function legacyActive()
+    if type(GetGossipActiveQuests) ~= "function" then return nil end
+    -- select("#") counts the trailing nils too ({...} with # would not, with nil flags in the middle).
+    local total, packed = (function(...) return select("#", ...), {...} end)(pcall(GetGossipActiveQuests))
+    if not packed[1] then return nil end
+    local count = total - 1
+    if count == 0 or count % LEGACY_STRIDE ~= 0 then return nil end
+    local list = {}
+    for base = 2, count + 1, LEGACY_STRIDE do
+        local title, level, complete = packed[base], packed[base + 1], packed[base + 3]
+        local okComplete = complete == nil or type(complete) == "boolean" or complete == 1
+        if type(title) ~= "string" or type(level) ~= "number" or not okComplete then return nil end
+        list[#list + 1] = {title = title, isComplete = complete == true or complete == 1}
+    end
+    return list
+end
+
 local function fromGossip()
-    local quests = ns.Call(C_GossipInfo and C_GossipInfo.GetActiveQuests)
-    for _, info in ipairs(type(quests) == "table" and quests or {}) do
-        if info.isComplete and info.questID and not waiting[info.title or info.questID] then
-            ns.Call(C_GossipInfo.SelectActiveQuest, info.questID)
+    if C_GossipInfo and C_GossipInfo.GetActiveQuests then
+        local quests = ns.Call(C_GossipInfo.GetActiveQuests)
+        for index, info in ipairs(type(quests) == "table" and quests or {}) do
+            local key = info.questID
+            if info.isComplete and key and not waiting[info.title or key] and not tried[key] then
+                chain(key, info.title, index, function() ns.Call(C_GossipInfo.SelectActiveQuest, key) end)
+                return
+            end
+        end
+        return
+    end
+    -- No C_GossipInfo: the old API, by position, only with a verifiable format. One attempt per window.
+    for index, info in ipairs(legacyActive() or {}) do
+        if info.isComplete and not waiting[info.title] and not tried[info.title] then
+            tried[info.title] = true
+            if type(SelectGossipActiveQuest) == "function" then ns.Call(SelectGossipActiveQuest, index) end
             return
         end
     end
@@ -54,9 +124,19 @@ local handlers = {
 local events = CreateFrame("Frame")
 for event in pairs(handlers) do pcall(events.RegisterEvent, events, event) end
 pcall(events.RegisterEvent, events, "QUEST_TURNED_IN")
+pcall(events.RegisterEvent, events, "GOSSIP_CLOSED")
 events:SetScript("OnEvent", function(_, event)
+    -- Bookkeeping first, whatever the switch says: a quest window or a closed gossip ends the attempt chain.
+    -- `tried` is forgotten when the gossip closes, when a quest window opened (the selection works: coming
+    -- back to the gossip is a new window) and after a hand-in. A selection that only reopened the gossip
+    -- keeps it, so the same quest is never selected in a loop.
+    if event == "QUEST_PROGRESS" or event == "QUEST_COMPLETE" or event == "GOSSIP_CLOSED" then
+        pending = nil
+        for key in pairs(tried) do tried[key] = nil end
+    end
     if event == "QUEST_TURNED_IN" then
         for title in pairs(waiting) do waiting[title] = nil end       -- a hand-in happened: choices may be new
+        for key in pairs(tried) do tried[key] = nil end
     elseif enabled() and handlers[event] then
         handlers[event]()
     end

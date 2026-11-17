@@ -21,7 +21,9 @@ ns.RowLayouts.card = {
         local y = 7
 
         if empty then
-            kit.write(row, row.instruction, nil, "muted", "", TEXT_X, y, textWidth)
+            -- no head line: the name, and under it the hint in the small base line (as the rail layout does)
+            y = y + kit.write(row, row.title, primary and kit.BIG or kit.NAME, "title", item.name, TEXT_X, y, textWidth) + 2
+            y = y + kit.write(row, row.instruction, nil, "instruction", item.action, TEXT_X, y, textWidth)
         else
             -- head line: number plate, state word, level data, open/close sign
             kit.rect(row, "plate:bg", "sub", TEXT_X, y, 20, 16, "ARTWORK", 0, 1)
@@ -34,9 +36,9 @@ ns.RowLayouts.card = {
             local stateX = TEXT_X + 28
             kit.write(row, row.instruction, nil, item.stateRole, (item.stateLabel or ""):upper(), stateX, y + 2, math.max(40, metaX - stateX - 6))
             y = y + 16 + 3
+            y = y + kit.write(row, row.title, primary and kit.BIG or kit.NAME, "title", kit.name(item), TEXT_X, y, textWidth) + 2
+            y = y + kit.text(row, "action", primary and kit.BODY or kit.SMALL, "instruction", kit.action(item, "accent"), TEXT_X, y, textWidth)
         end
-        y = y + kit.write(row, row.title, primary and kit.BIG or kit.NAME, "title", kit.name(item), TEXT_X, y, textWidth) + 2
-        y = y + kit.text(row, "action", primary and kit.BODY or kit.SMALL, "instruction", kit.action(item, "accent"), TEXT_X, y, textWidth)
 
         if item.lines then
             y = y + 7

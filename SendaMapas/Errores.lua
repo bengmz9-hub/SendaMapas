@@ -47,6 +47,7 @@ function ns:LogError(kind, message, trace)
     entry.last = entry.first
     list[#list + 1] = entry
     while #list > MAX_ENTRIES do table.remove(list, 1) end
+    if ns.UpdateErrorBadge then pcall(ns.UpdateErrorBadge, ns) end
     return entry
 end
 
@@ -85,13 +86,95 @@ function ns:ClearErrors()
     if self.saved then self.saved.errors = {} end
     for index = #buffer, 1, -1 do buffer[index] = nil end
     self:Print("Registro de errores vaciado.")
+    if self.UpdateErrorBadge then self:UpdateErrorBadge() end
+end
+
+-- Discreet "[!]" in the title bar of the panel, left of the Opciones button, while errors are logged.
+-- Clicking it opens the diagnostics window (Options.lua).
+function ns:UpdateErrorBadge()
+    local f = self.frame
+    if not f then return end
+    local count = self:ErrorCount()
+    if count == 0 and not self.errorBadge then return end
+    local badge = self.errorBadge
+    if not badge then
+        badge = CreateFrame("Button", nil, f)
+        badge:SetSize(24, 24)
+        badge:SetPoint("TOPRIGHT", f, "TOPRIGHT", -50, -7)
+        badge.label = badge:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        badge.label:SetPoint("CENTER")
+        badge.label:SetText("[!]")
+        badge.label:SetTextColor(1, 0.35, 0.25)
+        badge:SetScript("OnClick", function() ns:ShowDiagnostics() end)
+        badge:SetScript("OnEnter", function(b)
+            if not GameTooltip then return end
+            GameTooltip:SetOwner(b, "ANCHOR_BOTTOM")
+            GameTooltip:SetText("Senda Mapas registró errores")
+            GameTooltip:AddLine("Clic: ventana de diagnóstico con el texto para copiar (Ctrl+C).", 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        badge:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        self.errorBadge = badge
+    end
+    badge:SetShown(count > 0)
+end
+
+-- Text of the diagnostics window: version, map, the API check, the rules self-test and every logged
+-- error in full (not cut at 160 characters like the chat).
+function ns:DiagnosticText()
+    local lines = {}
+    local function add(text) lines[#lines + 1] = tostring(text) end
+    add("Senda Mapas " .. tostring(self.Index and self.Index.version) .. " · Interface " ..
+        tostring(type(GetBuildInfo) == "function" and select(5, pcall(GetBuildInfo)) or "?"))
+    local zone = self.CurrentZoneId and self:CurrentZoneId()
+    add("Mapa activo: " .. tostring(self.saved and self.saved.map) .. " (" .. tostring(self.saved and self.MapLabel and
+        self:MapLabel(self.saved.map)) .. ") · zona actual: " .. tostring(zone) .. " · uiMap: " .. tostring(self.currentUiMap) ..
+        (self.currentMissing and (" · " .. self.currentMissing.name .. ": zona sin misiones registradas") or ""))
+    add("Aspecto: " .. tostring(self.saved and self.saved.skin) .. " · misión elegida: " .. tostring(self.selected))
+    add("")
+    for _, line in ipairs(self.ApiSupport and self:ApiSupport() or {}) do add(line) end
+    add("")
+    if self.SelfTest then
+        local realPrint, captured = self.Print, {}
+        self.Print = function(_, text) captured[#captured + 1] = tostring(text) end
+        local ok, err = pcall(self.SelfTest, self)
+        self.Print = realPrint
+        for _, text in ipairs(captured) do add(text) end
+        if not ok then add("SelfTest falló: " .. tostring(err)) end
+    end
+    add("")
+    local list = self.saved and self.saved.errors or buffer
+    local kinds, total = self:ErrorCount()
+    add("Errores: " .. kinds .. " distintos, " .. total .. " en total.")
+    for index, entry in ipairs(list) do
+        add(index .. ". [" .. tostring(entry.kind) .. " x" .. tostring(entry.count or 1) .. "] " .. tostring(entry.msg))
+        if entry.stack then add(entry.stack) end
+    end
+    return table.concat(lines, "\n")
 end
 
 local function mentionsUs(text)
     return type(text) == "string" and (text:find("SendaMapas", 1, true) ~= nil)
 end
 
+-- `inside` guards against a cycle: if the handler we chain to calls ours again (it wrapped us before we
+-- re-hooked on top of it), the second entry neither logs nor chains again.
+local inside, insideOriginal = false, false
 local function handler(message)
+    if inside then
+        -- Re-entry: the handler we chained to called ours again (it wrapped us before we re-hooked on top). The
+        -- first handler we ever found (usually the game's own error window) is called once here, so it still
+        -- receives the error; it is skipped when it is the one already running (no re-hook happened).
+        local original = ns.originalErrorHandler
+        if original and original ~= handler and original ~= ns.previousErrorHandler and not insideOriginal then
+            insideOriginal = true
+            local ok, result = pcall(original, message)
+            insideOriginal = false
+            if ok then return result end
+        end
+        return
+    end
+    inside = true
     if not capturing then
         capturing = true
         pcall(function()
@@ -101,11 +184,43 @@ local function handler(message)
         capturing = false
     end
     local previous = ns.previousErrorHandler
-    if previous then return previous(message) end
+    local ok, result = true, nil
+    if previous and previous ~= handler then ok, result = pcall(previous, message) end
+    inside = false
+    if not ok then error(result, 0) end
+    return result
 end
 ns.ErrorHandler = handler
 
-if type(seterrorhandler) == "function" and type(geterrorhandler) == "function" then
-    ns.previousErrorHandler = geterrorhandler()
+local function hook()
+    if type(seterrorhandler) ~= "function" or type(geterrorhandler) ~= "function" then return false end
+    local current = geterrorhandler()
+    if current == handler then return false end
+    if ns.originalErrorHandler == nil then ns.originalErrorHandler = current end   -- kept across re-hooks
+    ns.previousErrorHandler = current
     seterrorhandler(handler)
+    return true
+end
+hook()
+
+-- Another addon (BugGrabber...) may install its own handler after us and SendaMapas errors would stop being
+-- captured. At PLAYER_LOGIN, and at the first ADDON_LOADED of another addon after ours, put ours back on
+-- top, chaining the one found. At most MAX_REHOOKS times per session, so two addons that both re-hook
+-- never fight forever.
+local MAX_REHOOKS = 2
+ns.errorRehooks = 0
+local watcher = type(CreateFrame) == "function" and CreateFrame("Frame") or nil
+if watcher then
+    local sawOwn, checkedAfterOwn = false, false
+    pcall(watcher.RegisterEvent, watcher, "PLAYER_LOGIN")
+    pcall(watcher.RegisterEvent, watcher, "ADDON_LOADED")
+    watcher:SetScript("OnEvent", function(_, event, name)
+        if event == "ADDON_LOADED" then
+            if name == ADDON then sawOwn = true; return end
+            if not sawOwn or checkedAfterOwn then return end
+            checkedAfterOwn = true
+        end
+        if ns.errorRehooks < MAX_REHOOKS and hook() then ns.errorRehooks = ns.errorRehooks + 1 end
+    end)
+    ns.errorWatcher = watcher
 end

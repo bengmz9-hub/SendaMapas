@@ -24,6 +24,7 @@ Data\SendaMapas_KAL05.lua
 Data\SendaMapas_KAL06.lua
 Data\SendaMapas_KAL07.lua
 Data\SendaMapas_MAZ01.lua
+Data\SendaMapas_MAZ02.lua
 Skins.lua
 Aspecto.lua
 Rows.lua
