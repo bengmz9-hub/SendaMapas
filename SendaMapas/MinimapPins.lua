@@ -204,7 +204,8 @@ end
 
 function ns:RefreshMinimapPins()
     if not self.saved then return end
-    targets = self:CollectMinimapTargets()
+    -- Pins off: no log/context pass at all, just clear what was shown.
+    targets = self.saved.minimapPins == false and {} or self:CollectMinimapTargets()
     self.minimapDirty = nil
     self:UpdateMinimapPins()
 end
@@ -213,6 +214,7 @@ local driver = CreateFrame("Frame")
 driver.elapsed, driver.sinceTargets = 0, 0
 driver:SetScript("OnUpdate", function(self, elapsed)
     if not ns.saved or not Minimap then return end
+    if ns.saved.minimapPins == false and not ns.minimapState then return end      -- off and already cleared
     self.elapsed = self.elapsed + (elapsed or 0)
     self.sinceTargets = self.sinceTargets + (elapsed or 0)
     if self.elapsed >= 0.1 then

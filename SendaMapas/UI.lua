@@ -91,7 +91,11 @@ function ns:RenderMapPicker()
         row.strip:SetColorTexture(gc[1], gc[2], gc[3], 1)
         local bc = active and ns.palette.rowSel or (row.zebra and ns.palette.rowBg or ns.palette.rowAlt)
         row.back:SetColorTexture(bc[1], bc[2], bc[3], bc[4])
-        row.name:SetText((active and ns.Esc("accent", "> ") or "") .. ns.Esc("instruction", self:MapLabel(zoneId)) ..
+        local label = self:MapLabel(zoneId)
+        local same = 0
+        for otherId in pairs(self.Index.maps) do if self:MapLabel(otherId) == label then same = same + 1 end end
+        if same > 1 then label = label .. " (" .. zoneId .. ")" end      -- two maps with one name (the two Dalaran)
+        row.name:SetText((active and ns.Esc("accent", "> ") or "") .. ns.Esc("instruction", label) ..
             (here and ("  " .. ns.Esc("ent", "(estás aquí)")) or ""))
         row.range:SetText(ns.Esc("title", self:RangeText(zoneId)))
         local done, total = self:ZoneProgress(zoneId)

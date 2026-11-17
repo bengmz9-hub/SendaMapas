@@ -109,6 +109,13 @@ local function newPin(index)
         GameTooltip:SetText(q and q.n or tostring(self.questID))
         GameTooltip:AddLine((LABEL[self.kind] or "") .. (self.label and (": " .. self.label) or ""), 1, 1, 1, true)
         if q then GameTooltip:AddLine(ns:QuestInfoLine(q), 0.7, 0.8, 0.9, true) end
+        if self.kind == "available" then
+            if self.locked then GameTooltip:AddLine(self.locked, 1, 0.6, 0.3, true) end
+            if q and type(q.o) == "table" and #q.o > 0 then
+                GameTooltip:AddLine("Objetivos:", 0.9, 0.9, 0.6, true)
+                for _, text in ipairs(q.o) do GameTooltip:AddLine("· " .. tostring(text), 1, 1, 1, true) end
+            end
+        end
         GameTooltip:AddLine("Clic: seguir esta misión con la flecha", 0.6, 0.6, 0.6, true)
         GameTooltip:Show()
     end)
@@ -167,20 +174,31 @@ end
 -- Pins to draw on map `mapID`: list of {kind, quest, x, y, label}.
 function ns:CollectMapPins(mapID, zone)
     local list, seen = {}, {}
-    local function add(kind, q, spot)
+    local function add(kind, q, spot, locked)
         if spot.map ~= mapID then return end
         local key = kind .. ":" .. q.i .. ":" .. string.format("%.3f,%.3f", spot.x, spot.y)
         if seen[key] then return end
         seen[key] = true
-        list[#list+1] = {kind = kind, quest = q.i, x = spot.x, y = spot.y, label = spot.name}
+        list[#list+1] = {kind = kind, quest = q.i, x = spot.x, y = spot.y, label = spot.name, locked = locked}
+    end
+    -- Quests that cannot be taken yet (previous quests missing, or the player's level is below the minimum)
+    -- keep their "!" at the giver, with the reason and the objectives in its tooltip, but never draw objective
+    -- areas or monsters: those are only for quests in the log.
+    local function lockReason(q, state)
+        if state == "prereq" then return "Aún no se puede recoger: faltan misiones previas." end
+        local level = self.context and self.context.level
+        if type(q.r) == "number" and type(level) == "number" and q.r > level then
+            return "Aún no se puede recoger: necesitas nivel " .. q.r .. "."
+        end
     end
     local everything = self.saved.mapPinMode == "todo"
     local function consider(q)
         if self.Filters.HasFlag(q, "unimplementedStub") then return end
         local state = self:EntryState(q.i)
-        if state == "available" then
+        if state == "available" or state == "prereq" then
             if everything and self.Filters.Visible(q, self.context, self.saved.filters, state) and not self.saved.skipped[q.i] then
-                for _, spot in ipairs(self:EntitySpots(q.s, self:QuestZone(q.i))) do add("available", q, spot) end
+                local locked = lockReason(q, state)
+                for _, spot in ipairs(self:EntitySpots(q.s, self:QuestZone(q.i))) do add("available", q, spot, locked) end
             end
         elseif state == "active" then
             if everything then
@@ -377,7 +395,7 @@ function ns:RefreshQuestPins()
     for _, item in ipairs(list) do
         if used >= MAX_PINS then break end
         local pin = pool[used + 1] or newPin(used + 1)
-        pin.questID, pin.kind, pin.label = item.quest, item.kind, item.label
+        pin.questID, pin.kind, pin.label, pin.locked = item.quest, item.kind, item.label, item.locked
         pin.icon:SetTexture(ICON[item.kind])
         if pin.styleLevel ~= intensity or pin.styleIcon ~= ICON[item.kind] then
             ns.StyleMark(pin, pin.icon, ICON[item.kind], intensity)

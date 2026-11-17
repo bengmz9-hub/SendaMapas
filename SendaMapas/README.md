@@ -40,6 +40,10 @@ No se instala nada automáticamente: estos pasos los haces tú.
 - `/smapas minimapa tamano <50-200>`: tamaño de los símbolos del minimapa en porcentaje (100 por defecto).
 - `/smapas una` · `/smapas lista [1-8]`: una misión o lista en el panel.
 - `/smapas fondo <0-100>` · `/smapas fondo original`: opacidad del fondo.
+- `/smapas saltar`: salta la misión seleccionada (también con clic derecho sobre su fila): sale de la lista, del
+  mapa y de la flecha. El pie del panel cuenta las saltadas.
+- `/smapas malla on` · `malla off`: malla sobre la zona de los enemigos del objetivo (mapa M).
+- `/smapas ruta on` · `ruta off`: línea de ruta con flechas hasta el destino (mapa M).
 - `/smapas restaurar`: recupera las misiones saltadas.
 - `/smapas limpiar`: quita el destino marcado (flecha propia o TomTom).
 - `/smapas actualizar` (o el botón **Actualizar** del panel): relee las misiones completadas, salta al mapa
@@ -57,7 +61,7 @@ No se instala nada automáticamente: estos pasos los haces tú.
 - `/smapas flecha propia` · `flecha tomtom`: elegir la flecha propia (por defecto, no necesita TomTom) o TomTom.
 - `/smapas flecha tamano <24-128>`: tamaño de la flecha en píxeles (por defecto 48; también con la barra de
   la ventana de opciones).
-- `/smapas flecha diseno blizzard|punta|flecha|aguja`: diseño de la flecha (también con los botones de
+- `/smapas flecha diseno blizzard|lance|solar|aether|talon|pulse|plume`: diseño de la flecha (también con los botones de
   la ventana de opciones, que enseñan cada diseño).
 - `/smapas flecha invertir`: si la flecha propia gira al lado contrario, invierte el giro.
 - `/smapas flecha reiniciar`: recoloca la flecha propia (se mueve arrastrándola).
@@ -115,14 +119,16 @@ No se instala nada automáticamente: estos pasos los haces tú.
   la ventana recuerda la última que usaste. Se mueve arrastrando su título.
   - **Panel**: opacidad del fondo, tamaño original, y misiones visibles (Una o Lista y su límite).
   - **Seguimiento**: *seguir la misión elegida* (flecha y destino; en No solo se marca con el botón Marcar
-    destino), *cambiar de mapa solo al entrar en otro* y *ocultar misiones terminadas sin entregar*.
+    destino), *cambiar de mapa solo al entrar en otro*, *ocultar misiones terminadas sin entregar* y
+    *entregar misiones automáticamente* (activada por defecto; Shift la pausa).
   - **Aspecto**: los siete aspectos con una muestra de sus colores.
   - **Flecha**: flecha propia o TomTom, tamaño, los siete diseños con vista previa y *girar al revés*.
-  - **Mapa (M)**: destino marcado, símbolos (Solo «?», Todo o Ninguno) e **intensidad del color**.
+  - **Mapa (M)**: destino marcado, símbolos (Solo «?», Todo o Ninguno), **intensidad del color**, *malla en la zona de los enemigos* y
+    *línea de ruta con flechas al destino*.
   - **Minimapa**: símbolos Sí/No y su tamaño (50 a 200 %).
   - **Filtros**: las 12 categorías de misión (Mostrar, Marcar u Ocultar) en dos columnas.
-- **Intensidad de las marcas**: Normal, **Intensa** (por defecto) o Máxima. Suma capas del mismo icono y halo
-  con mezcla aditiva (colores más vivos con las mismas formas) y la franja del destino pasa a azul
+- **Intensidad de las marcas**: Normal, **Intensa** (por defecto) o Máxima. Aviva los colores del halo (sin duplicar el
+  icono, que lo desenfocaría) y la franja del destino pasa a azul
   intenso con bordes dorados. Afecta al mapa M y al minimapa.
 - **Movimiento fluido**: el rumbo y la distancia se miden 10 veces por segundo, pero la flecha gira en
   **cada fotograma** con la orientación actual del personaje, y los símbolos del minimapa se recolocan
@@ -148,7 +154,9 @@ No se instala nada automáticamente: estos pasos los haces tú.
   que tienes **terminada y sin entregar**. Nunca se marca dónde entregar una misión que no has
   terminado. `/smapas pines todo` añade «!» donde recoger misiones, y calaveras (matar) y rombos
   (recoger o usar) en los objetivos sin terminar de las misiones de tu registro. Pasar el ratón da
-  el detalle; pulsar una marca elige esa misión y la flecha la sigue. Usa texturas base del juego
+  el detalle; pulsar una marca elige esa misión y la flecha la sigue. Las misiones que aún no puedes recoger
+  (faltan previas o tu nivel es menor) conservan su «!» en quien las da, con el motivo y sus objetivos en el
+  tooltip, pero nunca dibujan objetivos, malla ni monstruos en el mapa ni en el minimapa. Usa texturas base del juego
   y el lienzo de `WorldMapFrame`. Al abrir el mapa de una zona cuyo módulo no está cargado, se
   compila en ese momento (no en combate).
 - **Marcado automático**: la misión elegida se marca sola; al cambiar de mapa,
@@ -248,8 +256,9 @@ En la carpeta `ADDONWOW`:
   con el nombre localizado del área o con el inglés de los datos. Si no
   coinciden (mapas con nombre distinto en la interfaz, nombres repetidos como
   los dos «City of Dalaran»), usa el selector manual.
-- Las coordenadas son solo de inicio y entrega; no hay posiciones de
-  objetivos. Con la misión en curso, la flecha apunta a la entrega.
+- Las posiciones de los objetivos existen solo para parte de las misiones (alrededor del 76 %): con las demás, el
+  addon avisa una vez de que no hay coordenadas y la flecha no se muestra; sigue el texto en el registro de misiones.
+  Si el cliente no está en inglés, los objetivos se emparejan por posición cuando el número de objetivos coincide.
 - El identificador de raza de los altos elfos en Forever no está confirmado;
   si el cliente devuelve otro, esas misiones se marcan con «(?)» en lugar de
   ocultarse.

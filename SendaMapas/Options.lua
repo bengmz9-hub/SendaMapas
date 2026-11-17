@@ -102,6 +102,7 @@ local function buildSkin(self, tab)
         b.label:SetWidth(width - 20)
         b.label:SetJustifyH("LEFT")
         b.who = b:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        ns.Tint(b.who, "buttonSub")      -- navy on Tactico's turquoise button, gray elsewhere
         b.who:SetPoint("TOPLEFT", b, "TOPLEFT", 10, -26)
         b.who:SetText(({classic = "El aspecto de siempre", bar = "Barra lateral de color", pill = "Columna con número y estado", featured = "Primera misión destacada", rail = "Carril de nodos numerados", card = "Tarjetas con banda de color", table = "Filas de tabla compactas"})[skin.rows] or "")
         b.swatches = {}

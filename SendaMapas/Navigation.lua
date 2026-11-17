@@ -160,14 +160,21 @@ function ns:UnfinishedObjectives(q)
     if not q or not q.ob then return nil, "" end
     local log = self.Call(C_QuestLog and C_QuestLog.GetQuestObjectives, q.i)
     local out, signature = {}, {}
+    if ns.AllObjectivesFinished(q.i) then return out, "" end      -- everything done: nothing left to draw
     for index, ob in ipairs(q.ob) do
-        local finished = false
+        local finished, matched = false, false
         if type(log) == "table" then
             local name = ns.NormalizeName(ob.n)
             for _, line in ipairs(log) do
                 local text = type(line) == "table" and ns.NormalizeName(line.text)
-                if name and text and text:find(name, 1, true) then finished = line.finished and true or false; break end
+                if name and text and text:find(name, 1, true) then
+                    finished, matched = line.finished and true or false, true
+                    break
+                end
             end
+            -- Client in another language than the data: names do not match, so with the same number of
+            -- objectives on both sides use the position.
+            if not matched and #log == #q.ob and type(log[index]) == "table" then finished = log[index].finished and true or false end
         end
         if not finished then out[#out+1] = ob; signature[#signature+1] = index end
     end
@@ -231,6 +238,12 @@ function ns:Navigate(id, quiet)
             self.navFail = failKey
             if self.markerQuest then self:ClearWaypoint() end
             say("No hay posición del objetivo de esta misión en los datos; sigue su texto en el registro de misiones.")
+            -- Automatic marking is quiet, but the arrow vanishing without a word is confusing: say it once per step
+            -- (navFail stops the retries).
+            if quiet then
+                self:Print(ns.AllObjectivesFinished(id) and "Objetivos completados: ya no se marcan en el mapa; falta entregar la misión." or
+                    "Esta misión no tiene coordenadas de objetivo en los datos: no hay flecha; sigue su texto en el registro de misiones.")
+            end
             return false
         end
     elseif state == "turnin" then
@@ -276,7 +289,12 @@ function ns:UpdateMarkedQuest()
     local state = self:EntryState(self.markerQuest)
     if state == "done" then self:ClearWaypoint()
     elseif state ~= self.markerState then
-        self:Navigate(self.markerQuest)
+        -- Quiet: a step without coordinates must not repeat a chat line on every quest-log update. If there is
+        -- no destination for the new step the old arrow is dropped (not left pointing at the previous one).
+        if not self:Navigate(self.markerQuest, true) then
+            if self.markerQuest then self:ClearWaypoint() end
+            self:Print("El siguiente paso de la misión marcada no tiene coordenadas en los datos; sigue su texto en el registro.")
+        end
     else
         -- Same state: retarget when an objective got finished (the log changed which ones remain).
         if state == "active" and select(2, self:UnfinishedObjectives(self:Quest(self.markerQuest))) ~= self.markerSig then

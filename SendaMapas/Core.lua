@@ -11,6 +11,16 @@ function ns.Call(fn, ...)
     if ok then return value end
 end
 
+-- True when the quest log lists objectives and every one is finished (language independent).
+function ns.AllObjectivesFinished(id)
+    local lines = ns.Call(C_QuestLog and C_QuestLog.GetQuestObjectives, id)
+    if type(lines) ~= "table" or #lines == 0 then return false end
+    for _, line in ipairs(lines) do
+        if type(line) ~= "table" or not line.finished then return false end
+    end
+    return true
+end
+
 function ns:Print(text)
     if DEFAULT_CHAT_FRAME then DEFAULT_CHAT_FRAME:AddMessage("|cff33bbffSenda Mapas:|r " .. tostring(text)) end
 end
@@ -22,7 +32,12 @@ function ns:ReadLog()
     for index = 1, count do
         local info = self.Call(C_QuestLog and C_QuestLog.GetInfo, index)
         if info and not info.isHeader and info.questID then
-            self.log[info.questID] = {index = index}
+            local complete
+            if GetQuestLogTitle then      -- the readiness flag also when only C_QuestLog.GetInfo is available
+                local ok, _, _, _, _, _, flag = pcall(GetQuestLogTitle, index)
+                if ok then complete = flag end
+            end
+            self.log[info.questID] = {index = index, complete = complete}
         elseif not info and GetQuestLogTitle then
             local ok, _, _, _, header, _, complete, _, id = pcall(GetQuestLogTitle, index)
             if ok and not header and id then self.log[id] = {index = index, complete = complete} end
@@ -113,6 +128,11 @@ function ns:LoadCompleted()
     local ids = self.Call(C_QuestLog and C_QuestLog.GetAllCompletedQuestIDs)
     if type(ids) == "table" then
         for _, id in ipairs(ids) do set[id] = true; count = count + 1 end
+    else
+        local legacy = self.Call(GetQuestsCompleted)       -- older clients: table id -> true
+        if type(legacy) == "table" then
+            for id, done in pairs(legacy) do if done then set[id] = true; count = count + 1 end end
+        end
     end
     for id in pairs(self.saved and self.saved.turnedIn or {}) do set[id] = true end
     self.completedSet = set
@@ -193,14 +213,30 @@ function ns:SelectQuest(id)
     if self.AutoNavigate then self:AutoNavigate() end
 end
 
-function ns:Skip()
-    if not self.selected then return end
-    local follow = self.markerQuest == self.selected
+function ns:SkippedCount()
+    local count = 0
+    for _ in pairs(self.saved and self.saved.skipped or {}) do count = count + 1 end
+    return count
+end
+
+-- Skip a quest (the selected one by default): it leaves the list, the map and the arrow until /smapas restaurar.
+function ns:Skip(id, quiet)
+    id = id or self.selected
+    if not id then
+        if not quiet then self:Print("No hay ninguna misión seleccionada para saltar.") end
+        return
+    end
+    local follow = self.markerQuest == id
     if follow then self:ClearWaypoint() end
-    self.saved.skipped[self.selected] = true
-    self.selected = nil
+    self.saved.skipped[id] = true
+    if self.selected == id then self.selected = nil end
     self:Refresh()
     if follow and self.selected then self:Navigate(self.selected) end
+    if not quiet then
+        local q = self:Quest(id)
+        self:Print("Misión saltada: " .. (q and q.n or tostring(id)) .. ". Saltadas: " .. self:SkippedCount() ..
+            " (/smapas restaurar las devuelve).")
+    end
 end
 
 function ns:RestoreChoices()
@@ -357,7 +393,10 @@ SlashCmdList.SENDAMAPAS = function(message)
     elseif command == "filtros" then ns.frame:Show(); ns.hudSettings:Show(); ns:SetOptionsSection("filters")
     elseif command == "fondo original" then ns:SetBackgroundOpacity(nil)
     elseif command:match("^fondo %d+$") then ns:SetBackgroundOpacity(command:match("^fondo (%d+)$"))
+    elseif command == "saltar" then ns:Skip()
     elseif command == "restaurar" then ns:RestoreChoices()
+    elseif command == "malla on" or command == "malla off" then ns:SetMapExtra("mapZones", command == "malla on")
+    elseif command == "ruta on" or command == "ruta off" then ns:SetMapExtra("mapRoute", command == "ruta on")
     elseif command == "limpiar" then ns:ClearWaypoint()
     elseif command == "errores" then ns:PrintErrors()
     elseif command == "errores borrar" then ns:ClearErrors()

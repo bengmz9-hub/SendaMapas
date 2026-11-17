@@ -10,9 +10,13 @@ local function bounded(value, fallback, low, high)
     return math.max(low, math.min(high, math.floor(value + 0.5)))
 end
 
+-- Tactico: solid turquoise buttons and the translucent selected-row tint keep their own alpha; only the dark
+-- panel surfaces follow the opacity slider.
+local OWN_ALPHA = {button = true, hover = true, buttonBorder = true, rowSel = true, featuredBg = true}
 local function paint(target, method, key)
     local color = palette[key]
     local alpha = type(ns.saved.backgroundOpacity) == "number" and ns.saved.backgroundOpacity/100 or color[4]
+    if ns.skinKey == "tactico" and OWN_ALPHA[key] then alpha = color[4] end
     if key == "border" and ns.SkinData and ns:SkinData().frame == "none" then alpha = 0 end    -- borderless skin
     target[method](target, color[1], color[2], color[3], alpha)
 end
@@ -76,6 +80,7 @@ function ns:SetBackgroundOpacity(value)
     else number = nil end
     self.saved.backgroundOpacity = number
     self:RepaintSurfaces()
+    if self.hudRenderedWidth and self.RenderHUD then self:RenderHUD() end      -- the row cards follow the slider live
     if self.opacityLabel then
         self.opacityLabel:SetText(number and ("Opacidad del fondo: " .. number .. "%") or "Fondo original (91%)")
         self.adjustingOpacity = true
@@ -257,13 +262,18 @@ function ns:NewHudRow(index)
     for _, fs in ipairs({row.title, row.instruction, row.detail}) do
         if fs.SetWordWrap then fs:SetWordWrap(true) end
     end
-    row:SetScript("OnClick", function(b) if b.questID then ns:ClickQuest(b.questID) end end)
+    if row.RegisterForClicks then row:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+    row:SetScript("OnClick", function(b, mouse)
+        if not b.questID then return end
+        if mouse == "RightButton" then ns:Skip(b.questID) else ns:ClickQuest(b.questID) end
+    end)
     row:SetScript("OnEnter", function(b)
         if not GameTooltip or not b.questID then return end
         local q = ns:Quest(b.questID)
         GameTooltip:SetOwner(b, "ANCHOR_CURSOR")
         GameTooltip:SetText(q and q.n or tostring(b.questID))
         GameTooltip:AddLine("Clic: abrir o cerrar la información de la misión", 0.6, 0.8, 0.9, true)
+        GameTooltip:AddLine("Clic derecho: saltar esta misión (/smapas restaurar las devuelve)", 0.6, 0.8, 0.9, true)
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -407,9 +417,17 @@ function ns:CreateUI()
     self:SetHUDMode(self.saved.hudMode, self.saved.visibleCount)
 end
 
+-- A failure while drawing must not leave the panel frozen: the render body runs under pcall and the
+-- "rendering" flag is always cleared; the error goes to the addon's own log.
 function ns:RenderHUD()
     if not self.frame or not self.context or self.rendering then return end
     self.rendering = true
+    local ok, err = pcall(self.RenderHUDBody, self)
+    self.rendering = nil
+    if not ok and self.ReportIssue then self:ReportIssue("RenderHUD", tostring(err)) end
+end
+
+function ns:RenderHUDBody()
     local ids = self:Entries()
     local visible, seen = {}, {}
     local limit = self.saved.hudMode == "list" and self.saved.visibleCount or 1
@@ -514,8 +532,8 @@ function ns:RenderHUD()
     local summary = self:MapSummary()
     self.hudFooter:SetText("Misión " .. step .. "/" .. total .. " · " .. completed .. "/" .. all .. " entregadas · " ..
         summary.active .. " por completar" .. (summary.turnin > 0 and (" · " .. summary.turnin .. " para entregar") or "") ..
-        (self.saved.autoSelect and "" or " · mapa fijo") .. where)
+        (self.saved.autoSelect and "" or " · mapa fijo") ..
+        (self:SkippedCount() > 0 and (" · " .. self:SkippedCount() .. " saltadas (/smapas restaurar)") or "") .. where)
     self.hudRenderedWidth = width
-    self.rendering = nil
     self:LayoutHUD(width)
 end

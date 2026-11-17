@@ -7,11 +7,15 @@ local function enabled()
     return ns.saved and ns.saved.autoTurnin ~= false and not ns.Call(IsShiftKeyDown)
 end
 
+-- Quests that stopped at a reward choice (by title): not selected again until one is handed in, so the
+-- NPC's own gossip (innkeeper, vendor, flight master) stays reachable.
+local waiting = {}
+
 -- Gossip window: the first finished quest among the ones this NPC takes.
 local function fromGossip()
     local quests = ns.Call(C_GossipInfo and C_GossipInfo.GetActiveQuests)
     for _, info in ipairs(type(quests) == "table" and quests or {}) do
-        if info.isComplete and info.questID then
+        if info.isComplete and info.questID and not waiting[info.title or info.questID] then
             ns.Call(C_GossipInfo.SelectActiveQuest, info.questID)
             return
         end
@@ -21,8 +25,8 @@ end
 -- Quest greeting window (NPC with only quests): same, by position.
 local function fromGreeting()
     for index = 1, ns.Call(GetNumActiveQuests) or 0 do
-        local ok, _, complete = pcall(GetActiveTitle, index)
-        if ok and complete then
+        local ok, title, complete = pcall(GetActiveTitle, index)
+        if ok and complete and not waiting[title] then
             ns.Call(SelectActiveQuest, index)
             return
         end
@@ -38,6 +42,8 @@ local handlers = {
     QUEST_COMPLETE = function()
         local choices = ns.Call(GetNumQuestChoices) or 0
         if choices > 1 then
+            local title = ns.Call(GetTitleText)
+            if title then waiting[title] = true end
             ns:Print("Entrega automática: elige tú la recompensa (" .. choices .. " opciones).")
             return
         end
@@ -47,10 +53,16 @@ local handlers = {
 
 local events = CreateFrame("Frame")
 for event in pairs(handlers) do pcall(events.RegisterEvent, events, event) end
+pcall(events.RegisterEvent, events, "QUEST_TURNED_IN")
 events:SetScript("OnEvent", function(_, event)
-    if enabled() and handlers[event] then handlers[event]() end
+    if event == "QUEST_TURNED_IN" then
+        for title in pairs(waiting) do waiting[title] = nil end       -- a hand-in happened: choices may be new
+    elseif enabled() and handlers[event] then
+        handlers[event]()
+    end
 end)
 ns.autoTurninHandlers = handlers     -- for the tests
+ns.autoTurninWaiting = waiting
 
 function ns:SetAutoTurnin(enabled, quiet)
     self.saved.autoTurnin = enabled and true or false

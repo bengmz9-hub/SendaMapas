@@ -11,6 +11,7 @@ local palette = {}
 ns.palette = palette
 for role, color in pairs(Skins.list[Skins.default].c) do palette[role] = {color[1], color[2], color[3], color[4]} end
 
+palette.buttonSub = {0.5, 0.5, 0.5, 1}      -- small gray text inside buttons (the default "disabled" font color)
 ns.skinKey = Skins.default
 local tinted, tintedTextures, skinFrames = {}, {}, {}
 
@@ -113,6 +114,15 @@ applyFrame = function(entry, skin)
     end
 end
 
+-- Tactico: its buttons are solid turquoise, so their text is navy blue (pale text on turquoise is hard to
+-- read). Only the roles listed here change; the dark panel is untouched. HUD.lua keeps these fills (and
+-- the selected-row tint) at their own alpha instead of the panel opacity.
+local NAVY = {0.0627, 0.1255, 0.3137, 1}
+local TACTICO_BUTTONS = {
+    button = {0.2392, 0.8784, 0.7843, 1}, hover = {0.4549, 0.9294, 0.8588, 1},
+    buttonBorder = {0.1020, 0.5686, 0.5059, 1}, buttonText = NAVY, buttonSub = {0.0627, 0.1255, 0.3137, 1},
+}
+
 -- ------------------------------------------------------------------------------ applying a skin
 function ns:ApplySkin(quiet)
     local key = self.saved and self.saved.skin
@@ -123,6 +133,14 @@ function ns:ApplySkin(quiet)
         local target = palette[role]
         if not target then target = {}; palette[role] = target end
         target[1], target[2], target[3], target[4] = color[1], color[2], color[3], color[4]
+    end
+    local sub = palette.buttonSub
+    sub[1], sub[2], sub[3], sub[4] = 0.5, 0.5, 0.5, 1
+    if key == "tactico" then
+        for role, color in pairs(TACTICO_BUTTONS) do
+            local target = palette[role]
+            target[1], target[2], target[3], target[4] = color[1], color[2], color[3], color[4]
+        end
     end
     for _, entry in ipairs(tinted) do
         local c = palette[entry[2]]

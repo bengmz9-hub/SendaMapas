@@ -43,7 +43,7 @@ local function featuredCard(self, item, row, rowWidth)
     end
     local height = y + padY
     kit.fill(row, "card", "featuredBg", 0, 0, rowWidth, height)
-    kit.outline(row, "card", "selBorder", 0, 0, rowWidth, height, "BORDER")       -- the featured card is always outlined
+    kit.outline(row, "card", item.selected and "selBorder" or "border", 0, 0, rowWidth, height, "BORDER")      -- outlined; selection color only when it is the selected row
     kit.selection(row, 1, 1, rowWidth - 2, height - 2)
     return height
 end
