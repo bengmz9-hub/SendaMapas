@@ -111,6 +111,7 @@ function ns:ShowMinimapPinTooltip(pin)
     local head = self.pinLabels and self.pinLabels[pin.kind]     -- the entrance pin carries its whole sentence
     GameTooltip:AddLine(head and (head .. (pin.label and (": " .. pin.label) or "")) or (pin.label or ""), 1, 1, 1, true)
     if q then GameTooltip:AddLine(self:QuestInfoLine(q), 0.7, 0.8, 0.9, true) end
+    if pin.locked then GameTooltip:AddLine(pin.locked, 1, 0.6, 0.3, true) end
     GameTooltip:Show()
     return true
 end
@@ -169,7 +170,7 @@ function ns:CollectMinimapTargets()
             local ok, pins = pcall(self.CachedStates, self, self.CollectMapPins, self, map, zone)
             if ok then
                 for _, pin in ipairs(pins) do
-                    list[#list+1] = {kind = pin.kind, map = map, x = pin.x, y = pin.y, quest = pin.quest, label = pin.label}
+                    list[#list+1] = {kind = pin.kind, map = map, x = pin.x, y = pin.y, quest = pin.quest, label = pin.label, locked = pin.locked}
                 end
             end
         end
@@ -229,6 +230,12 @@ function ns:PlaceMinimapPins()
                 local size = math.floor((SIZE[kind] or 24) * scale / 100 + 0.5)
                 if pin.appliedSize ~= size then pin:SetSize(size, size); pin.appliedSize = size end
                 if pin.appliedIcon ~= icon then pin.icon:SetTexture(icon); pin.appliedIcon = icon end
+                local lookLocked = target.locked and true or false          -- gray and faint when it cannot be taken yet
+                if pin.appliedLocked ~= lookLocked then
+                    pin.icon:SetAlpha(lookLocked and 0.5 or 1)
+                    if pin.icon.SetDesaturated then pin.icon:SetDesaturated(lookLocked) end
+                    pin.appliedLocked = lookLocked
+                end
                 local restyle = pin.styleLevel ~= level or pin.styleIcon ~= icon
                 if restyle then
                     ns.StyleMark(pin, pin.icon, icon, level)
@@ -240,8 +247,9 @@ function ns:PlaceMinimapPins()
                     if pin.appliedKind ~= kind then setPinMouse(pin, target.quest ~= nil) end   -- quest pins only
                     pin.appliedKind = kind
                 end
-                pin.questID, pin.label = target.quest, target.label
-                local frameLevel = baseLevel + (kind == "dest" and 3 or 0)
+                pin.questID, pin.label, pin.locked = target.quest, target.label, target.locked
+                -- gray locked "!" lowest, other marks above it, turn-in "?" higher, destination star on top
+                local frameLevel = baseLevel + (kind == "dest" and 4 or kind == "turnin" and 3 or target.locked and 0 or 1)
                 if pin.appliedLevel ~= frameLevel then pin:SetFrameLevel(frameLevel); pin.appliedLevel = frameLevel end
                 pin:ClearAllPoints()
                 pin:SetPoint("CENTER", Minimap, "CENTER", rx * halfW, ry * halfH)

@@ -434,7 +434,28 @@ function ns:AutoNavigate()
     if not self.saved or self.saved.autoNavigate == false then return end
     local id = self.selected
     if not id or self.markerQuest == id then return end
+    -- the player took this route off by hand (ToggleQuestMark): not marked again until the quest changes state
+    if self.unmarkedQuest == id and self.unmarkedState == self:EntryState(id) then return end
     self:Navigate(id, true)
+end
+
+-- Click on a quest mark of the map: the first click marks the route to it, the next one takes it off and leaves
+-- the quest target free (the quest stays selected but is not marked again by the automatic marking).
+function ns:ToggleQuestMark(id)
+    if not id then return false end
+    if self.markerQuest == id then
+        self:ClearWaypoint()
+        self.unmarkedQuest, self.unmarkedState = id, self:EntryState(id)
+        if self.RefreshMapPins then self:RefreshMapPins() end
+        if self.Render then self:Render() end
+        return false
+    end
+    self.unmarkedQuest = nil
+    if self.selected ~= id then self:SelectQuest(id) end
+    if self.markerQuest ~= id and not self:Navigate(id, true) then
+        self:Print("No se puede marcar la ruta de esta misión: no hay coordenadas en los datos.")
+    end
+    return self.markerQuest == id
 end
 
 function ns:UpdateMarkedQuest()

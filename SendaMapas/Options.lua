@@ -15,6 +15,7 @@ local TABS = {
     {key = "map", label = "Mapa (M)"},
     {key = "minimap", label = "Minimapa"},
     {key = "filters", label = "Filtros"},
+    {key = "actions", label = "Acciones"},
 }
 local TAB_ALIAS = {appearance = "panel", tracking = "follow"}
 local INTENSITY_NAMES = {"Normal", "Intensa", "Máxima"}
@@ -216,6 +217,9 @@ local function buildMap(self, tab)
     addToggle(tab, "mapRoute", -306, "Línea de ruta con flechas al destino",
         function() return ns.saved.mapRoute ~= false and "Sí" or "No" end,
         function() ns:SetMapExtra("mapRoute", ns.saved.mapRoute == false, true) end)
+    addToggle(tab, "lockedPins", -344, "«!» de misiones aún no disponibles (grises)",
+        function() return ns.saved.lockedPins ~= false and "Sí" or "No" end,
+        function() ns:SetLockedPins(ns.saved.lockedPins == false, true) end)
 end
 
 local function buildMinimap(self, tab)
@@ -252,8 +256,47 @@ local function buildFilters(self, tab)
     note(tab, -32 - perColumn * 46 + 6, "Marcar muestra la misión con una etiqueta. Clase, raza y facción se leen del personaje.")
 end
 
+-- Actions that before needed a /smapas command, as buttons in two columns. Each one calls the same function as
+-- its command, quiet where the function allows it; a short line only when the result is not visible otherwise
+-- (the map summary prints because informing is its purpose).
+ns.optionActions = {
+    {key = "skip", caption = "Saltar la misión elegida", command = "saltar", run = function() ns:Skip(nil, true) end},
+    {key = "restore", caption = "Devolver misiones saltadas", command = "restaurar", run = function()
+        local count = ns:SkippedCount()
+        ns:RestoreChoices()
+        ns:Print("Misiones saltadas devueltas: " .. count .. ".")
+    end},
+    {key = "clear", caption = "Quitar el destino marcado", command = "limpiar", run = function() ns:ClearWaypoint() end},
+    {key = "arrowReset", caption = "Recolocar la flecha", command = "flecha reiniciar", run = function()
+        ns:ResetArrowPosition()
+        ns:Print("Flecha recolocada.")
+    end},
+    {key = "here", caption = "Ir al mapa donde estoy", command = "aqui", run = function() ns:GoToCurrentMap() end},
+    {key = "update", caption = "Releer el progreso", command = "actualizar", run = function() ns:UpdateProgress() end},
+    {key = "previousMap", caption = "Mapa anterior", command = "anterior", run = function() ns:MoveMap(-1) end},
+    {key = "nextMap", caption = "Mapa siguiente", command = "siguiente", run = function() ns:MoveMap(1) end},
+    {key = "summary", caption = "Resumen del mapa (chat)", command = "resumen", run = function() ns:PrintMapSummary(true) end},
+    {key = "clearErrors", caption = "Borrar errores guardados", command = "errores borrar", run = function() ns:ClearErrors() end},
+}
+
+local function buildActions(self, tab)
+    heading(tab, -4, "Acciones (sin escribir comandos)")
+    self.actionButtons = {}
+    local width = math.floor((CONTENT_W - 10) / 2)
+    for index, action in ipairs(self.optionActions) do
+        local b = button(tab, action.caption, width, 0, function() action.run(); ns:RenderOptions() end)
+        local column, row = (index - 1) % 2, math.floor((index - 1) / 2)
+        place(b, tab, column * (width + 10), -34 - row * 38)
+        b.action = action.key
+        self.actionButtons[action.key] = b
+    end
+    note(tab, -236, "Hacen lo mismo que los comandos /smapas (saltar, restaurar, limpiar, flecha reiniciar, aqui, actualizar, "
+        .. "anterior, siguiente, resumen, errores borrar). La ventana Diagnóstico (pestaña Panel) muestra los errores, "
+        .. "la prueba de reglas y /smapas api.")
+end
+
 local BUILDERS = {panel = buildPanel, skin = buildSkin, follow = buildFollow, arrow = buildArrow, map = buildMap,
-    minimap = buildMinimap, filters = buildFilters}
+    minimap = buildMinimap, filters = buildFilters, actions = buildActions}
 
 -- ---------------------------------------------------------------------------------- window
 function ns:CreateHUDSettings()
@@ -342,6 +385,15 @@ function ns:RenderOptions()
     self.adjustingMinimap = nil
     for key, b in pairs(self.filterButtons) do
         b.label:SetText(self.Filters.modeLabels[self.saved.filters[key]] or "?")
+    end
+    local actions = self.actionButtons
+    if actions then
+        local skipped = self:SkippedCount()
+        actions.restore.label:SetText("Devolver misiones saltadas (" .. skipped .. ")")
+        actions.restore:SetEnabled(skipped > 0)
+        actions.skip:SetEnabled(self.selected ~= nil)
+        actions.clear:SetEnabled(self.markerQuest ~= nil or self.dest ~= nil or self.waypoint ~= nil)
+        actions.clearErrors:SetEnabled((self.ErrorCount and (self:ErrorCount()) or 0) > 0)
     end
 end
 ns.RenderFilterOptions = ns.RenderOptions       -- name used by the other files
@@ -563,7 +615,7 @@ local SETTINGS = {
     {"textSize", oneOf("small", "normal", "large")}, {"stateSymbols", bool, writeBool},
     {"progressSound", bool, writeBool}, {"autoNavigate", bool, writeBool}, {"autoSelect", bool, writeBool},
     {"hideTurnin", bool, writeBool}, {"openAll", bool, writeBool}, {"autoTurnin", bool, writeBool},
-    {"listOrder", oneOf("progresion", "cercania")},
+    {"listOrder", oneOf("progresion", "cercania")}, {"lockedPins", bool, writeBool},
 }
 local FILTER_MODE = oneOf("show", "mark", "hide")
 local MAX_TEXT = 4000

@@ -103,7 +103,7 @@ local function newPin(index)
     pin.glow:Hide()
     pin.icon = pin:CreateTexture(nil, "ARTWORK")
     pin.icon:SetAllPoints(pin)
-    pin:SetScript("OnClick", function(self) if self.questID then ns:SelectQuest(self.questID) end end)
+    pin:SetScript("OnClick", function(self) if self.questID then ns:ToggleQuestMark(self.questID) end end)
     pin:SetScript("OnEnter", function(self)
         if not GameTooltip or not self.questID then return end
         local q = ns:Quest(self.questID)
@@ -119,7 +119,7 @@ local function newPin(index)
                 for _, text in ipairs(q.o) do GameTooltip:AddLine("· " .. tostring(text), 1, 1, 1, true) end
             end
         end
-        GameTooltip:AddLine("Clic: seguir esta misión con la flecha", 0.6, 0.6, 0.6, true)
+        GameTooltip:AddLine("Clic: marcar la ruta · clic de nuevo: quitarla", 0.6, 0.6, 0.6, true)
         GameTooltip:Show()
     end)
     pin:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -127,9 +127,12 @@ local function newPin(index)
     return pin
 end
 
-local function place(pin, parent, x, y, scale)
+-- Drawing order of the quest marks: gray locked "!" at the bottom, the turn-in "?" on top.
+local PIN_PRIORITY = {available = 1, kill = 2, collect = 2, entrance = 2, turnin = 4}
+
+local function place(pin, parent, x, y, scale, priority)
     if pin:GetParent() ~= parent then pin:SetParent(parent) end
-    pin:SetFrameLevel(9000)
+    pin:SetFrameLevel(9000 + (priority or 0))
     pin:SetScale(scale)
     local positioned = false
     if type(WorldMapFrame.SetPinPosition) == "function" then
@@ -198,9 +201,12 @@ function ns:CollectMapPins(mapID, zone)
     local function consider(q)
         if self.Filters.HasFlag(q, "unimplementedStub") then return end
         local state = self:EntryState(q.i)
+        -- A quest that is in the quest log never gets its pick-up "!", whatever the state check said.
+        if (state == "available" or state == "prereq") and self.log and self.log[q.i] then state = "active" end
         if state == "available" or state == "prereq" then
-            if everything and self.Filters.Visible(q, self.context, self.saved.filters, state) and not self.saved.skipped[q.i] then
-                local locked = lockReason(q, state)
+            local locked = lockReason(q, state)
+            local shown = not locked or self.saved.lockedPins ~= false      -- /smapas bloqueadas off hides the locked ones
+            if shown and everything and self.Filters.Visible(q, self.context, self.saved.filters, state) and not self.saved.skipped[q.i] then
                 for _, spot in ipairs(self:EntitySpots(q.s, self:QuestZone(q.i))) do add("available", q, spot, locked) end
             end
         elseif state == "active" then
@@ -238,7 +244,26 @@ function ns:CollectMapPins(mapID, zone)
         local q = self:Quest(id)
         if q and self:QuestZone(id) ~= zone then consider(q) end
     end
-    return list
+    -- A "!" of a quest that cannot be taken yet must never hide another mark: where any other pin sits on
+    -- the same spot (typically the turn-in "?" of the same NPC) the gray one is dropped, and the rest are
+    -- ordered by priority so the turn-in is drawn last (on top).
+    local taken = {}
+    for _, item in ipairs(list) do
+        if not item.locked then taken[string.format("%.2f,%.2f", item.x, item.y)] = true end
+    end
+    local kept = {}
+    for index, item in ipairs(list) do
+        if not (item.locked and taken[string.format("%.2f,%.2f", item.x, item.y)]) then
+            item.priority = item.locked and 0 or (PIN_PRIORITY[item.kind] or 1)
+            item.order = index
+            kept[#kept + 1] = item
+        end
+    end
+    table.sort(kept, function(a, b)
+        if a.priority ~= b.priority then return a.priority < b.priority end
+        return a.order < b.order
+    end)
+    return kept
 end
 
 -- Areas where the unfinished objectives are (a gold mesh for kill and collect objectives), like the quest
@@ -418,12 +443,15 @@ function ns:RefreshQuestPins()
         local pin = pool[used + 1] or newPin(used + 1)
         pin.questID, pin.kind, pin.label, pin.locked = item.quest, item.kind, item.label, item.locked
         pin.icon:SetTexture(ICON[item.kind])
+        -- A "!" that cannot be taken yet (previous quests or level missing) is drawn gray and faint.
+        pin.icon:SetAlpha(item.locked and 0.5 or 1)
+        if pin.icon.SetDesaturated then pin.icon:SetDesaturated(item.locked and true or false) end
         if pin.styleLevel ~= intensity or pin.styleIcon ~= ICON[item.kind] then
             ns.StyleMark(pin, pin.icon, ICON[item.kind], intensity)
             pin.styleIcon = ICON[item.kind]
         end
         pin.glow:SetShown(targeted ~= nil and targeted == item.quest)
-        if place(pin, parent, item.x, item.y, scale) then
+        if place(pin, parent, item.x, item.y, scale, item.priority) then
             used = used + 1
             pin:Show()
         else pin:Hide() end
@@ -570,7 +598,7 @@ function ns:RefreshDestination()
     if destPin.styleLevel ~= level then ns.StyleMark(destPin, destPin.star, DEST_ICON, level) end
     destPin.label:SetText(dest.title or "")
     destPin.label:SetTextColor(1, level == 1 and 0.82 or 0.9, level == 1 and 0.0 or 0.2)
-    place(destPin, parent, dest.x, dest.y, scale)
+    place(destPin, parent, dest.x, dest.y, scale, 6)
     destPin:SetFrameLevel(9500)
     destPin:Show()
     local used = 0
@@ -578,7 +606,7 @@ function ns:RefreshDestination()
         if spot.map == mapID and (spot.x ~= dest.x or spot.y ~= dest.y) and used < 12 then
             used = used + 1
             local dot = destDots[used] or newDot(used, parent)
-            place(dot, parent, spot.x, spot.y, scale)
+            place(dot, parent, spot.x, spot.y, scale, 3)
             dot.glow:SetShown(level > 1)
             dot:SetFrameLevel(9400)
             dot:Show()
@@ -587,6 +615,17 @@ function ns:RefreshDestination()
     for index = used + 1, #destDots do destDots[index]:Hide() end
     ns.destShown = true
     ns.destUi = {pin = destPin, banner = destBanner, dots = destDots}
+end
+
+-- Show or hide the "!" of quests that cannot be taken yet (default shown).
+function ns:SetLockedPins(enabled, quiet)
+    self.saved.lockedPins = enabled and true or false
+    if not quiet then
+        self:Print("«!» de misiones aún no disponibles (grises): " .. (self.saved.lockedPins and "mostrados." or "ocultos."))
+    end
+    self:RefreshMapPins()
+    if self.RefreshMinimapPins then self:RefreshMinimapPins() end
+    if self.RenderFilterOptions then self:RenderFilterOptions() end     -- the Mapa (M) switch shows the new state
 end
 
 -- Mesh over the enemy areas of the objectives (key mapZones) and route line to the destination (key mapRoute).

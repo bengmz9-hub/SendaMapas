@@ -1,4 +1,4 @@
-# Senda Mapas 0.1.0-alpha (WoW Forever, Interface 16001)
+# Senda Mapas 0.2.0-alpha (WoW Forever, Interface 16001)
 
 Guía de misiones **por mapa**, en **una sola carpeta**. Al entrar en un mapa se
 compila el módulo de datos que contiene las misiones de ese mapa (los demás
@@ -13,7 +13,7 @@ dobles de la API de WoW (ver «Límites conocidos»).
 ## Instalación (manual)
 
 1. Cierra el juego.
-2. Descomprime `SendaMapas-0.1.0-alpha.zip` dentro de la carpeta `AddOns` del
+2. Descomprime `SendaMapas-0.2.0-alpha.zip` dentro de la carpeta `AddOns` del
    cliente: `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\`
    (ajusta la ruta si tu instalación es otra).
 3. Debe quedar **una sola carpeta**: `AddOns\SendaMapas\` con `SendaMapas.toc`
@@ -42,6 +42,9 @@ No se instala nada automáticamente: estos pasos los haces tú.
 - `/smapas fondo <0-100>` · `/smapas fondo original`: opacidad del fondo.
 - `/smapas saltar`: salta la misión seleccionada (también con clic derecho sobre su fila): sale de la lista, del
   mapa y de la flecha. El pie del panel cuenta las saltadas.
+- `/smapas bloqueadas on` · `bloqueadas off`: muestra u oculta los «!» grises de misiones que aún no puedes recoger
+  (faltan previas o nivel); las misiones que ya están en tu registro nunca dibujan «!» de recoger. El «!» gris nunca
+  tapa otra marca: si en el mismo sitio hay un «?» de entrega u otro símbolo, el gris no se dibuja, y el «?» va siempre encima.
 - `/smapas malla on` · `malla off`: malla sobre la zona de los enemigos del objetivo (mapa M).
 - `/smapas ruta on` · `ruta off`: línea de ruta con flechas hasta el destino (mapa M).
 - `/smapas restaurar`: recupera las misiones saltadas.
@@ -86,6 +89,39 @@ En el menú de *Atajos de teclado* del juego aparece la sección **Senda Mapas**
 juego lee solo de la carpeta del addon) con seis acciones sin tecla asignada: *Mostrar u ocultar el panel*,
 *Misión siguiente*, *Misión anterior*, *Marcar destino*, *Selector de mapas* y *Saltar la misión*. Hacen lo mismo
 que los botones del panel; las teclas las asignas tú.
+
+## Todo desde las opciones
+
+Los comandos `/smapas` siguen funcionando, pero no hace falta escribir ninguno: todo está en el panel o en la
+ventana de opciones (botón con la rueda del panel). Los botones de la pestaña **Acciones** no escriben en el chat,
+salvo *Devolver misiones saltadas* (una línea con cuántas devolvió), *Recolocar la flecha* (una línea),
+*Resumen del mapa* (su fin es escribir el resumen) y lo que ya escriben los botones de mapas (el resumen de una
+línea del mapa que se carga) y *Releer el progreso* (lo mismo que el botón Actualizar).
+
+| Comando | Dónde está sin escribir |
+|---|---|
+| (sin palabra) | Atajo *Mostrar u ocultar el panel* |
+| `mapas`, `mapa <n>` | Botón **Mapas** del panel (selector) |
+| `aqui` | Opciones → **Acciones** → *Ir al mapa donde estoy* |
+| `siguiente` · `anterior` | Opciones → **Acciones** → *Mapa siguiente* · *Mapa anterior* |
+| `auto on` · `auto off` | Opciones → **Seguimiento** → *Cambiar de mapa solo al entrar en otro* |
+| `una` · `lista [n]` · `abrir` · `cerrar` | Opciones → **Panel** (Una, Lista, límite, información de las misiones); botón *Abrir todas* del panel |
+| `fondo …` · `texto …` · `simbolos …` | Opciones → **Panel** |
+| `opciones` · `filtros` | Botón de la rueda del panel; pestaña **Filtros** |
+| `aspecto …` | Opciones → **Aspecto** |
+| `saltar` | Clic derecho en la misión del panel; Opciones → **Acciones** → *Saltar la misión elegida*; atajo |
+| `restaurar` | Opciones → **Acciones** → *Devolver misiones saltadas (n)* |
+| `limpiar` | Opciones → **Acciones** → *Quitar el destino marcado* |
+| `resumen` | Opciones → **Acciones** → *Resumen del mapa (chat)* |
+| `actualizar` | Botón **Actualizar** del panel; Opciones → **Acciones** → *Releer el progreso* |
+| `marcar on` · `marcar off` · `terminadas …` · `orden …` · `sonido …` · `autoentregar …` | Opciones → **Seguimiento** |
+| `flecha propia` · `flecha tomtom` · `flecha tamano` · `flecha diseno` · `flecha invertir` | Opciones → **Flecha** |
+| `flecha reiniciar` | Opciones → **Acciones** → *Recolocar la flecha* |
+| `destino …` · `pines …` · `intensidad …` · `malla …` · `ruta …` · `bloqueadas …` | Opciones → **Mapa (M)** |
+| `minimapa on` · `minimapa off` · `minimapa tamano` | Opciones → **Minimapa** |
+| `diagnostico` · `errores` · `test` · `api` | Opciones → **Panel** → *Diagnóstico* (errores completos, prueba de reglas y API); indicador **[!]** del panel |
+| `errores borrar` | Opciones → **Acciones** → *Borrar errores guardados* |
+| Exportar / Importar | Opciones → **Panel** (solo botones) |
 
 ## Uso
 
@@ -160,10 +196,11 @@ que los botones del panel; las teclas las asignas tú.
     (activada por defecto; Shift la pausa) y *sonido al completar un objetivo o la misión* (desactivado por defecto).
   - **Aspecto**: los siete aspectos con una muestra de sus colores.
   - **Flecha**: flecha propia o TomTom, tamaño, los siete diseños con vista previa y *girar al revés*.
-  - **Mapa (M)**: destino marcado, símbolos (Solo «?», Todo o Ninguno), **intensidad del color**, *malla en la zona de los enemigos* y
-    *línea de ruta con flechas al destino*.
+  - **Mapa (M)**: destino marcado, símbolos (Solo «?», Todo o Ninguno), **intensidad del color**, *malla en la zona de los enemigos*,
+    *línea de ruta con flechas al destino* y *«!» de misiones aún no disponibles (grises)*.
   - **Minimapa**: símbolos Sí/No y su tamaño (50 a 200 %).
   - **Filtros**: las 12 categorías de misión (Mostrar, Marcar u Ocultar) en dos columnas.
+  - **Acciones**: botones para lo que antes solo se hacía escribiendo un comando (ver «Todo desde las opciones»).
 - **Tamaño del texto**: Pequeño (90 %), Normal o Grande (115 %). Se consigue escalando el panel entero, así que
   letras, filas y botones crecen juntos y no se pisan; el panel se queda en su sitio. No cambia la ventana de
   opciones ni la flecha.
@@ -215,7 +252,7 @@ que los botones del panel; las teclas las asignas tú.
   terminado. `/smapas pines todo` añade «!» donde recoger misiones, y calaveras (matar) y rombos
   (recoger o usar) en los objetivos sin terminar de las misiones de tu registro. La malla de la zona de los
   objetivos es **roja** para matar y **azul** para recoger o usar, como sus iconos. Pasar el ratón da
-  el detalle; pulsar una marca elige esa misión y la flecha la sigue. Las misiones que aún no puedes recoger
+  el detalle; pulsar una marca elige esa misión y marca la ruta con la flecha; pulsarla otra vez quita la ruta y deja libre el destino (la misión sigue elegida, pero el marcado automático no la vuelve a marcar hasta que cambie de estado o elijas otra). Las misiones que aún no puedes recoger
   (faltan previas o tu nivel es menor) conservan su «!» en quien las da, con el motivo y sus objetivos en el
   tooltip, pero nunca dibujan objetivos, malla ni monstruos en el mapa ni en el minimapa. Usa texturas base del juego
   y el lienzo de `WorldMapFrame`. Al abrir el mapa de una zona cuyo módulo no está cargado, se

@@ -258,6 +258,7 @@ function ns:QueueRefresh()
 end
 
 function ns:SelectQuest(id)
+    if self.unmarkedQuest and self.unmarkedQuest ~= id then self.unmarkedQuest = nil end
     self.selected = id
     if self.activeData then self.saved.mapSelections[self.saved.map] = id end
     if self.Render then self:Render() end
@@ -507,6 +508,18 @@ events:SetScript("OnEvent", function(_, event, name)
     end
 end)
 
+-- Load the map the player is in (/smapas aqui and the "Ir al mapa donde estoy" button of the options).
+function ns:GoToCurrentMap()
+    local zone, seen = self:CurrentZoneId()
+    if zone then return self:LoadMap(zone) end
+    if self.currentMissing then
+        self:Print(self.currentMissing.name .. ": zona sin misiones registradas en la base actual. Usa /smapas mapas.")
+    else
+        self:Print("No se reconoce el mapa actual (" .. tostring(seen or "?") .. "). Usa /smapas mapas.")
+    end
+    return false
+end
+
 SLASH_SENDAMAPAS1 = "/smapas"
 SlashCmdList.SENDAMAPAS = function(message)
     local command = (message or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
@@ -516,10 +529,7 @@ SlashCmdList.SENDAMAPAS = function(message)
     if command == "mapas" then ns.frame:Show(); ns:ToggleMapPicker()
     elseif command == "aqui" or command == "actual" then
         ns.frame:Show()
-        local zone, seen = ns:CurrentZoneId()
-        if zone then ns:LoadMap(zone)
-        elseif ns.currentMissing then ns:Print(ns.currentMissing.name .. ": zona sin misiones registradas en la base actual. Usa /smapas mapas.")
-        else ns:Print("No se reconoce el mapa actual (" .. tostring(seen or "?") .. "). Usa /smapas mapas.") end
+        ns:GoToCurrentMap()
     elseif command:match("^mapa %d+$") then ns:LoadMap(tonumber(command:match("^mapa (%d+)$"))); ns.frame:Show()
     elseif command == "siguiente" then ns:MoveMap(1); ns.frame:Show()
     elseif command == "anterior" then ns:MoveMap(-1); ns.frame:Show()
@@ -535,6 +545,7 @@ SlashCmdList.SENDAMAPAS = function(message)
     elseif command == "saltar" then ns:Skip()
     elseif command == "restaurar" then ns:RestoreChoices()
     elseif command == "malla on" or command == "malla off" then ns:SetMapExtra("mapZones", command == "malla on")
+    elseif command == "bloqueadas on" or command == "bloqueadas off" then ns:SetLockedPins(command == "bloqueadas on")
     elseif command == "ruta on" or command == "ruta off" then ns:SetMapExtra("mapRoute", command == "ruta on")
     elseif command:match("^texto %S+$") then ns:SetTextSize(command:match("^texto (%S+)$"))
     elseif command == "orden" or command:match("^orden %S+$") then ns:SetListOrder(command:match("^orden (%S+)$"))

@@ -1,27 +1,43 @@
 # Historial de cambios
 
-## 0.1.0-alpha (2026-11-17)
+## 0.2.0-alpha (2026-11-17)
 
-Estado: alpha sin probar aún en el cliente real de WoW Forever (`Interface 16001`); validada con Lua 5.1 (runtime local de VLC) y dobles de la API de WoW.
+Estado: alpha sin probar aún en el cliente real de WoW Forever (`Interface 16001`). Se ha validado con Lua 5.1 y dobles de la API de WoW (66 + 13 comprobaciones), y el paquete con `validar_paquete_sendamapas.py`.
 
-### Interfaz, aspectos y accesibilidad
-- **Aspectos y Táctico (`Skins.lua`, `Aspecto.lua`, `HUD.lua`, `Options.lua`)**: siete aspectos intercambiables en vivo (`clasico`, `bronce`, `codice`, `expedicion`, `bitacora` por defecto, `estandarte` y `tactico`), con seis estructuras de fila dedicadas (`Rows.lua`, `Rows_bar.lua`, `Rows_pill.lua`, `Rows_featured.lua`, `Rows_rail.lua`, `Rows_card.lua`, `Rows_table.lua`) y botones turquesa con texto azul marino en **Táctico** manteniendo el fondo oscuro del panel.
-- **Iconos, malla de objetivos y ruta (`Media/*.tga`, `generar_iconos.py`, `MapPins.lua`, `MinimapPins.lua`)**: iconos propios en TGA de 128×128 (`Icon_Available`, `Icon_Turnin`, `Icon_Kill`, `Icon_Collect`, `Icon_Dest`, `Icon_Dot`, `Route_Arrow`), malla suave (`Zone_Mesh`) roja para matar y azul para recoger/usar sobre áreas de objetivos, línea de ruta con flechas en el mapa del mundo y minimapa, e intensidad en 3 niveles sin duplicar icono.
-- **Pines de misiones bloqueadas (`MapPins.lua`, `MinimapPins.lua`)**: en modo `todo`, las misiones aún no recogibles (previas pendientes o nivel insuficiente) conservan su «!» en quien las da con el motivo y sus objetivos en el tooltip, sin dibujar objetivos, malla ni monstruos en mapa ni minimapa.
-- **Saltar misiones (`HUD.lua`, `Core.lua`)**: comando `/smapas saltar` y clic derecho sobre cualquier fila del panel para saltar una misión, contador de saltadas en el pie del panel y recuperación con `/smapas restaurar`.
-- **Comandos de mapa y diagnósticos (`Core.lua`, `Options.lua`, `Errores.lua`)**: comandos `/smapas malla on|off`, `/smapas ruta on|off`, `/smapas api` (comprobación de APIs presentes en el cliente), `/smapas diagnostico` (ventana copiable con versión, mapa, APIs, autoprueba y errores completos) y aviso discreto `[!]` en el panel cuando hay errores registrados.
-- **Atajos de teclado, tooltips, texto y perfiles (`Bindings.xml`, `HUD.lua`, `MinimapPins.lua`, `Navigation.lua`, `Options.lua`)**: 6 acciones en `Bindings.xml` (`SENDAMAPAS_TOGGLE`, `NEXT`, `PREV`, `MARK`, `MAPS`, `SKIP`), tooltips enriquecidos en filas y pines del minimapa, `Alt+clic` para abrir misiones enlazadas, selector de tamaño de texto (`Pequeño`/`Normal`/`Grande` y `/smapas texto`), símbolos de estado opcionales (`[!]`, `[•]`, `[?]`, `[✓]`), sonido opcional al completar objetivo o misión, y exportación/importación de ajustes visuales (`SM1`).
+### Nuevo
+- **Todo desde las opciones**: pestaña «Acciones» (saltar, devolver saltadas, quitar destino, recolocar flecha, ir al mapa donde estás, mapa anterior/siguiente, releer progreso, resumen, borrar errores) y todos los ajustes con control en el panel; los comandos `/smapas` siguen existiendo. Tabla «comando → dónde está» en el README.
+- **Entrega automática de misiones** (activada por defecto; `Shift` la pausa; `/smapas autoentregar no` o el interruptor de Seguimiento la quitan). Solo entrega misiones terminadas, nunca acepta; con varias recompensas deja la ventana abierta y no la reabre hasta la siguiente entrega. En gossip prueba `questID`, índice y la API antigua. Aviso explicativo la primera vez.
+- **Atajos de teclado** (`Bindings.xml`): mostrar/ocultar panel, misión siguiente/anterior, marcar destino, selector de mapas, saltar.
+- **Saltar misiones**: `/smapas saltar`, clic derecho en la fila o botón; contador en el pie; `/smapas restaurar` las devuelve.
+- **Orden de la lista por cercanía** (opcional, `/smapas orden progresion|cercania`).
+- **Tooltips**: filas del panel (id, nivel, PX, inicio, cadena con estados), pines del minimapa y `Alt+clic` para abrir la misión previa o siguiente aunque esté en otro mapa.
+- **Accesibilidad y diagnóstico**: tamaño de texto (Pequeño/Normal/Grande), símbolos de estado opcionales (`[!] [*] [?] [v]`), sonido opcional al completar, ventana de diagnóstico copiable con `[!]` cuando hay errores, `/smapas api`, exportar/importar configuración visual (sin progreso).
+- **Mapa elegido a mano**: se mantiene hasta que cambias de zona.
 
-### Motor, navegación y entrega automática
-- **Entrega automática por defecto (`AutoTurnin.lua`, `Options.lua`, `Core.lua`)**: activada por defecto para entregar misiones terminadas al hablar con el NPC (nunca acepta misiones nuevas; `Shift` la pausa; si hay varias recompensas deja la ventana abierta y evita reabrirla hasta la entrega; `/smapas autoentregar [si|no]` y cadena cauta de intentos en gossip por `questID`, índice y API antigua).
-- **Emparejado de objetivos por posición (`Navigation.lua`)**: cuando el idioma del cliente no coincide con los nombres en inglés de los datos, `UnfinishedObjectives` empareja por índice si el número de objetivos del registro coincide.
-- **Zonas sin misiones (`MapResolver.lua`, `Modules.lua`, `HUD.lua`)**: reconocimiento de mapas en `ns.Index.missingMaps` con mensaje informativo `<Nombre>: zona sin misiones registradas en la base actual`.
-- **Rendimiento y estabilidad (`Core.lua`, `HUD.lua`, `MinimapPins.lua`, `Arrow.lua`, `MapResolver.lua`, `Errores.lua`)**: caché de estados por refresco, optimización por fotograma en el minimapa (incluido soporte de minimapa cuadrado via `GetMinimapShape`), cachés de nombres y ejes por zona, limpieza garantizada de `self.rendering` en `RenderHUD`, reenganche del manejador de errores tras el login, y `Migrate()` de esquema en `SendaMapasDB`.
+### Mapa y minimapa
+- Iconos y malla nuevos: malla roja para matar y azul para recoger, línea de ruta con flechas, estrella de destino.
+- Los «!» de misiones que aún no puedes recoger (previas o nivel) salen grises con el motivo en el tooltip, sin objetivos ni malla (`/smapas bloqueadas off` los oculta); nunca tapan un «?» de entrega y el «?» se dibuja encima.
+- Las misiones de tu registro nunca dibujan «!» de recoger; las de objetivos terminados no dibujan malla ni monstruos.
+- Objetivos dentro de una mazmorra: se marcan como «Entrada de <mazmorra>» sin malla de objetivo.
+- Clic en una marca del mapa: marca la ruta; otro clic la quita y deja libre el destino.
+- Mapas sin misiones registradas muestran un aviso en lugar de «no se reconoce el mapa».
 
-### Datos, generadores y auditorías
-- **Ordenación determinista de misiones (`preparar_sendamapas.py`, `Data/*.lua`)**: ordenación topológica estable dentro de bandas de 2 niveles que respeta cadenas (`previa -> siguiente` en el mismo mapa, reduciendo las violaciones de 229 a 0 en los 75 mapas) y agrupa misiones por hub y proximidad de coordenadas de inicio (reduciendo los saltos `> 20 %` del mapa de 613 a 399 entre adyacentes y la suma de distancias normalizadas un 30,9 %).
-- **Empaquetado de atajos (`preparar_sendamapas.py`, `tests_sendamapas/validar_paquete_sendamapas.py`)**: comprobación de `Bindings.xml` en `MAIN_DOCS` (se empaqueta en la carpeta/ZIP sin exigirlo en `SendaMapas.toc`) y validación explícita de formato y exclusión del `.toc`.
-- **Índice de zonas sin misiones (`preparar_sendamapas.py`, `Index.lua`)**: emisión determinista de `ns.Index.missingMaps` con los 8 mapas `MISSING` (`2437`, `16632`, `16667`, `16756`, `16876`, `17065`, `17066`, `17852`).
-- **Enlaces de cadena, reproducibilidad y módulos (`preparar_sendamapas.py`, `Data/*.lua`, `MODULOS.md`)**: resolución desde referencias cruzadas de captura y estrictamente desde la copia fijada en el proyecto (`reutilizacion/20261108-203754/QuestieDB`, con huella SHA-256 registrada en `MODULOS.md` y fallo explícito si falta), reduciendo los enlaces sin mapa conocido de 131 a 60 y los anónimos de 87 a 53 dentro de 19 módulos (`<= 98 009` bytes en el mayor). El generador y el validador fallan también si quedan archivos huérfanos en `SendaMapas\Data\`.
-- **Cobertura y marca de entradas de mazmorra (`datos-navegacion/scripts/*.py`, `preparar_sendamapas.py`)**: resolución recursiva de contenedores intermedios (`itemDrops` → `npcDrops`/`objectDrops`) y asociación de entradas exteriores de mazmorra (`dungeons.lua`) para marcadores `[-1,-1]`, añadiendo `e="<Nombre de mazmorra>"` en esos 266 objetivos `ob` (1220 misiones con coordenadas sobre 1390 con objetivo en la copia fijada).
-- **Documentación y validación (`SendaMapas/THIRD_PARTY.md`, `tests_sendamapas/validar_paquete_sendamapas.py`, `results/`)**: desglose de campos procedentes de Wowhead Forever y `QuestieDB` en `THIRD_PARTY.md`, comprobación de versión, `missingMaps`, `Bindings.xml` y ausencia de módulos huérfanos en el validador de paquete, e informes de auditoría y revisión en `results/`.
+### Aspectos
+- Siete aspectos; Táctico con fondo oscuro y botones turquesa con texto azul marino; indicador `+`/`-` de fila desplegable en todos; botón «Marcar destino» con rol principal; más contraste en Códice y Expedición; Táctico definido como datos en el generador.
+
+### Motor
+- Caché de estados por refresco (≈10× menos consultas), minimapa sin trabajo repetido por fotograma y con soporte de minimapa cuadrado, cachés de nombres de zona, respaldo de APIs, versión y migración de los datos guardados, y manejador de errores que se reengancha sin romper a otros addons.
+- Arreglos: panel que se desplazaba con texto Pequeño/Grande, protección del minimapa en combate, `RenderHUD` con `pcall`, avisos duplicados, línea de ruta del minimapa, importación de configuración y otros.
+- Objetivos emparejados por posición cuando el cliente no está en inglés.
+
+### Datos y generadores
+- Misiones ordenadas respetando cadenas y agrupando por zona y cercanía (violaciones previa→siguiente 229 → 0; saltos grandes −35 %).
+- Enlaces de cadena sin mapa o sin nombre: 131 → 0 y 87 → 0 (datos locales de QuestieDB).
+- Misiones con todos los objetivos con coordenadas: 70,7 % → 79,9 %; 272 objetivos de mazmorra resueltos a su entrada exterior.
+- 19 módulos de datos; `ns.Index.missingMaps` con los 8 mapas sin módulo.
+- QuestieDB fijado en una copia del proyecto (`reutilizacion/20261117-snapshot-questiedb`, huella SHA-256 registrada en `MODULOS.md`); el generador falla si falta o si quedan módulos huérfanos. `THIRD_PARTY.md` detalla qué campos proceden de Wowhead Forever.
+
+Nota: la redistribución pública de los datos derivados de Wowhead Forever no está verificada (ver `THIRD_PARTY.md`); por eso no se publica en CurseForge/Wago por ahora.
+
+## 0.1.0-alpha (2026-11-15)
+- Primera versión pública: guía de misiones por mapa, panel con aspectos, flecha propia, marcas en mapa y minimapa, filtros y ventana de opciones.
