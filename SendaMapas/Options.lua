@@ -262,27 +262,28 @@ local function buildFollow(self, tab)
         function()
             ns:SetListOrder(({ruta = "pasos", pasos = "progresion", progresion = "cercania", cercania = "ruta"})[ns:ListOrderValue()], true)
         end)
-    -- three lines at 7 px (the switch at 210 follows)
-    note(tab, -160, "Seguir: la flecha va sola a la elegida (en No, con Marcar destino). Ocultar terminadas: fuera "
-        .. "de lista, mapa y flecha. Ruta (por defecto): recoge y entrega por sitios. Cercanía: la más cercana.")
-    addToggle(tab, "autoTurnin", -210, "Entregar misiones automáticamente",
+    -- two lines at 7 px (the switch at 192 follows); the acceptance switch took the place of the old one-line note
+    note(tab, -160, "Seguir: la flecha va sola a la elegida. Ocultar: terminadas fuera de lista, mapa y flecha. "
+        .. "Ruta: recoge y entrega por sitios.")
+    addToggle(tab, "autoTurnin", -192, "Entregar misiones automáticamente",
         function() return ns.saved.autoTurnin ~= false and "Sí" or "No" end,
         function() ns:SetAutoTurnin(ns.saved.autoTurnin == false, true) end, "Glyph_check")
-    -- phase 14c (§7.5): the note in one line (user's text; at 7 px per character it fits in 470) and, under it, the
-    -- three-valued switch of the notices next to the panel. The note goes at 238 (not 242): at 14 px per line it ends
-    -- at 252, where the label of the switch at 258 starts.
-    note(tab, -238, "Nunca acepta misiones; Mayús la pausa; si hay varias, eliges tú.")
-    addToggle(tab, "turninNotice", -258, "Avisos de entrega, recompensa y piedra",
+    -- on by default (nil counts as on); takes only the quests the guided route asks for; Shift pauses both
+    addToggle(tab, "autoAccept", -224, "Aceptar las misiones que pide la guía",
+        function() return ns.saved.autoAccept ~= false and "Sí" or "No" end,
+        function() ns:SetAutoAccept(ns.saved.autoAccept == false, true) end, "Glyph_exclaim")
+    -- phase 14c (§7.5): the three-valued switch of the notices next to the panel
+    addToggle(tab, "turninNotice", -256, "Avisos de entrega, recompensa y piedra",
         function() return ns:TurninNoticeName() end,
         function() ns:SetTurninNotice(ns:NextTurninNotice(), true) end, "Glyph_coin")
     ns.options.turninNotice.textOnly = true            -- three values: its «No» is a text button too
-    addToggle(tab, "progressSound", -292, "Sonido al completar un objetivo o la misión",
+    addToggle(tab, "progressSound", -288, "Sonido al completar un objetivo o la misión",
         function() return ns.saved.progressSound and "Sí" or "No" end,
         function() ns:SetProgressSound(not ns.saved.progressSound, true) end, "Glyph_bolt")
-    addToggle(tab, "rewardHint", -324, "Marcar la recompensa más valiosa",
+    addToggle(tab, "rewardHint", -320, "Marcar la recompensa más valiosa",
         function() return ns.saved.rewardHint ~= false and "Sí" or "No" end,
         function() ns:SetRewardHint(ns.saved.rewardHint == false, true) end, "Glyph_coin")
-    addToggle(tab, "transportRoute", -356, "Ruta con transporte (barco, portal, vuelo)",        -- one line at 7 px
+    addToggle(tab, "transportRoute", -352, "Ruta con transporte (barco, portal, vuelo)",        -- one line at 7 px
         function() return ns.saved.transportRoute ~= false and "Sí" or "No" end,
         function() ns:SetTransportRoute(ns.saved.transportRoute == false, true) end, "Glyph_boat")
 end

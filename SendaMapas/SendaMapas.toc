@@ -2,7 +2,7 @@
 ## Title: Senda Mapas
 ## Notes: Guía de misiones por mapa (WoW Forever). Compila bajo demanda los datos del mapa actual.
 ## Author: Proyecto local ADDONWOW
-## Version: 0.6.5-alpha
+## Version: 0.6.6-alpha
 ## SavedVariablesPerCharacter: SendaMapasDB
 
 Index.lua

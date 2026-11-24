@@ -961,8 +961,9 @@ function ns:Initialize()
     if type(IsLoggedIn) ~= "function" or self.Call(IsLoggedIn) then self:CheckZone() end
     if not self.saved.firstRunDone then
         self.saved.firstRunDone = true
-        self:Print("Primera vez: la entrega automática de misiones terminadas está activada (Shift la pausa; " ..
-            "/smapas autoentregar no la quita). El aspecto y el resto están en /smapas opciones.")
+        self:Print("Primera vez: la entrega automática de misiones terminadas y la aceptación de las que pide la guía " ..
+            "están activadas (Shift las pausa; /smapas autoentregar no y /smapas autoaceptar no las quitan). " ..
+            "El aspecto y el resto están en /smapas opciones.")
     end
 end
 

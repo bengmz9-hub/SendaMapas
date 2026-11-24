@@ -613,6 +613,7 @@ function ns:SetAutoAccept(enabled, quiet)
         self:Print(self.saved.autoAccept and "Aceptación automática de misiones de la guía: activada (Mayús la pausa)." or
             "Aceptación automática de misiones de la guía: desactivada.")
     end
+    if self.RenderFilterOptions then self:RenderFilterOptions() end
 end
 
 -- /smapas autoentregar [si|no]: added in front of the command list of Core.lua; no word switches it.
