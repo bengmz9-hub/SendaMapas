@@ -1,4 +1,4 @@
-# Módulos de SendaMapas 0.6.6-alpha
+# Módulos de SendaMapas 0.6.7-alpha
 
 Generado por `preparar_sendamapas.py`. Tamaños reales en bytes de `Data/<módulo>.lua`.
 
@@ -8,27 +8,27 @@ Mapas sin misiones (MISSING, sin módulo): Ragefire Chasm (2437), Half-Pint Tave
 
 | Módulo | Bytes | Mapas (zoneId: bytes, misiones) |
 | --- | ---: | --- |
-| SendaMapas_EK01 | 92427 | Elwynn Forest (12: 30080, 79); Dun Morogh (1: 26960, 68); Stormwind City (1519: 32541, 92) |
-| SendaMapas_KAL01 | 98998 | Teldrassil (141: 25484, 66); Darnassus (1657: 12420, 31); Thousand Needles (400: 13586, 42); The Barrens (17: 8126, 23); Darkshore (148: 30938, 80); Moonglade (493: 4962, 11) |
-| SendaMapas_ISLA01 | 61509 | Zephras Isle (16593: 59770, 120) |
-| SendaMapas_EK02 | 62110 | Ironforge (1537: 46881, 101) |
-| SendaMapas_EK03 | 102732 | Westfall (40: 23699, 53); Deeprun Tram (2257: 697, 2); Loch Modan (38: 21302, 50); Redridge Mountains (44: 16606, 42); Wetlands (11: 27926, 69); Hillsbrad Foothills (267: 8327, 18) |
-| SendaMapas_EK04 | 38637 | Duskwood (10: 37952, 97) |
-| SendaMapas_KAL02 | 88091 | Stonetalon Mountains (406: 11115, 27); Ashenvale (331: 20000, 53); Desolace (405: 26692, 67); Shen'dralas (16651: 14249, 34); Dustwallow Marsh (15: 13299, 47) |
-| SendaMapas_EK05 | 100311 | Alterac Mountains (36: 9021, 23); Arathi Highlands (45: 14582, 35); Swamp of Sorrows (8: 6656, 17); Badlands (3: 14698, 36); The Hinterlands (47: 7969, 19); Searing Gorge (51: 15540, 33); Western Plaguelands (28: 29266, 62) |
-| SendaMapas_EK06 | 45812 | Stranglethorn Vale (33: 44035, 114) |
-| SendaMapas_EK07 | 45935 | Riverglades (16591: 42546, 111) |
-| SendaMapas_KAL03 | 39361 | Tanaris (440: 38250, 93) |
-| SendaMapas_KAL04 | 99741 | Feralas (357: 19900, 53); Azshara (16: 25710, 73); Felwood (361: 25493, 73); Blackmaw Hold (Timbermaw Open World) (1216: 3457, 7); Un'Goro Crater (490: 21284, 51); Elderwild (16848: 401, 1) |
-| SendaMapas_EK08 | 39909 | Blasted Lands (4: 17810, 35); Burning Steppes (46: 12558, 23); Deadwind Pass (41: 449, 1); Blackrock Mountain (25: 7755, 13) |
-| SendaMapas_EK09 | 47648 | Eastern Plaguelands (139: 46237, 102) |
-| SendaMapas_KAL05 | 52572 | Silithus (1377: 51229, 109) |
-| SendaMapas_KAL06 | 51401 | Mount Hyjal (616: 48050, 140) |
-| SendaMapas_KAL07 | 25129 | Winterspring (618: 23992, 53); The Shaper's Terrace (16985: 791, 3) |
-| SendaMapas_MAZ01 | 87578 | The Deadmines (1581: 2779, 6); Wailing Caverns (718: 2815, 8); Shadowfang Keep (209: 175, 2); Blackfathom Deeps (719: 2292, 6); The Stockade (717: 2826, 6); Gnomeregan (721: 9573, 25); Scarlet Monastery (796: 1761, 3); Razorfen Kraul (491: 2225, 4); Razorfen Downs (722: 2941, 6); Maraudon (2100: 4307, 9); Uldaman (1337: 8870, 19); Dire Maul (2557: 16561, 36); Zul'Farrak (1176: 4231, 10); Stratholme (2017: 8740, 16); The Temple of Atal'Hakkar (1477: 2912, 8); Blackrock Depths (1584: 12949, 27) |
-| SendaMapas_MAZ02 | 43421 | Blackrock Spire (1583: 15007, 27); Scholomance (2057: 7633, 12); Alcaz Prison (16620: 2141, 8); Blackmaw Hold (16554: 2251, 9); City of Dalaran (16544: 2306, 4); City of Dalaran (16560: 1757, 4); Excavation Site: Wetlands (16732: 2824, 9); Krol'dok Stronghold (16842: 2801, 9); Ruins of Lordaeron (16611: 1616, 4); The Drowned City (16550: 1970, 5); The Hall of Thanes (16919: 1878, 4) |
+| SendaMapas_EK01 | 93653 | Elwynn Forest (12: 30080, 79); Dun Morogh (1: 26960, 68); Stormwind City (1519: 32541, 92) |
+| SendaMapas_KAL01 | 99980 | Teldrassil (141: 25484, 66); Darnassus (1657: 12420, 31); Thousand Needles (400: 13586, 42); The Barrens (17: 8126, 23); Darkshore (148: 30938, 80); Moonglade (493: 4962, 11) |
+| SendaMapas_ISLA01 | 62017 | Zephras Isle (16593: 59770, 120) |
+| SendaMapas_EK02 | 62350 | Ironforge (1537: 46881, 101) |
+| SendaMapas_EK03 | 104031 | Westfall (40: 23699, 53); Deeprun Tram (2257: 697, 2); Loch Modan (38: 21302, 50); Redridge Mountains (44: 16606, 42); Wetlands (11: 27926, 69); Hillsbrad Foothills (267: 8327, 18) |
+| SendaMapas_EK04 | 39266 | Duskwood (10: 37952, 97) |
+| SendaMapas_KAL02 | 88668 | Stonetalon Mountains (406: 11115, 27); Ashenvale (331: 20000, 53); Desolace (405: 26692, 67); Shen'dralas (16651: 14249, 34); Dustwallow Marsh (15: 13299, 47) |
+| SendaMapas_EK05 | 100816 | Alterac Mountains (36: 9021, 23); Arathi Highlands (45: 14582, 35); Swamp of Sorrows (8: 6656, 17); Badlands (3: 14698, 36); The Hinterlands (47: 7969, 19); Searing Gorge (51: 15540, 33); Western Plaguelands (28: 29266, 62) |
+| SendaMapas_EK06 | 46214 | Stranglethorn Vale (33: 44035, 114) |
+| SendaMapas_EK07 | 46524 | Riverglades (16591: 42546, 111) |
+| SendaMapas_KAL03 | 39570 | Tanaris (440: 38250, 93) |
+| SendaMapas_KAL04 | 100191 | Feralas (357: 19900, 53); Azshara (16: 25710, 73); Felwood (361: 25493, 73); Blackmaw Hold (Timbermaw Open World) (1216: 3457, 7); Un'Goro Crater (490: 21284, 51); Elderwild (16848: 401, 1) |
+| SendaMapas_EK08 | 40071 | Blasted Lands (4: 17810, 35); Burning Steppes (46: 12558, 23); Deadwind Pass (41: 449, 1); Blackrock Mountain (25: 7755, 13) |
+| SendaMapas_EK09 | 47760 | Eastern Plaguelands (139: 46237, 102) |
+| SendaMapas_KAL05 | 52626 | Silithus (1377: 51229, 109) |
+| SendaMapas_KAL06 | 51404 | Mount Hyjal (616: 48050, 140) |
+| SendaMapas_KAL07 | 25323 | Winterspring (618: 23992, 53); The Shaper's Terrace (16985: 791, 3) |
+| SendaMapas_MAZ01 | 87889 | The Deadmines (1581: 2779, 6); Wailing Caverns (718: 2815, 8); Shadowfang Keep (209: 175, 2); Blackfathom Deeps (719: 2292, 6); The Stockade (717: 2826, 6); Gnomeregan (721: 9573, 25); Scarlet Monastery (796: 1761, 3); Razorfen Kraul (491: 2225, 4); Razorfen Downs (722: 2941, 6); Maraudon (2100: 4307, 9); Uldaman (1337: 8870, 19); Dire Maul (2557: 16561, 36); Zul'Farrak (1176: 4231, 10); Stratholme (2017: 8740, 16); The Temple of Atal'Hakkar (1477: 2912, 8); Blackrock Depths (1584: 12949, 27) |
+| SendaMapas_MAZ02 | 43531 | Blackrock Spire (1583: 15007, 27); Scholomance (2057: 7633, 12); Alcaz Prison (16620: 2141, 8); Blackmaw Hold (16554: 2251, 9); City of Dalaran (16544: 2306, 4); City of Dalaran (16560: 1757, 4); Excavation Site: Wetlands (16732: 2824, 9); Krol'dok Stronghold (16842: 2801, 9); Ruins of Lordaeron (16611: 1616, 4); The Drowned City (16550: 1970, 5); The Hall of Thanes (16919: 1878, 4) |
 
-Total módulos: 19. Bytes de datos: 1223322. Misiones: 2838 (63 marcadas como stub, siempre ocultas).
+Total módulos: 19. Bytes de datos: 1231884. Misiones: 2838 (63 marcadas como stub, siempre ocultas).
 
 Enlaces de cadena a otros mapas con módulo: 574. Enlaces con etiqueta de captura: 175. Enlaces con etiqueta recuperada de datos locales: 112 (nombres recuperados: 72). Enlaces sin mapa conocido: 0 (anónimos: 0). Discrepancias zona índice/crossMapLinks: 0. Objetivos con entrada exterior de mazmorra (`e`): 272.
 
@@ -57,7 +57,7 @@ Recompensas finales y cadenas destacadas: 299 misiones iniciales con misiones fi
 
 Acceso = mazmorras de 5 jugadores y sus llaves (la Cumbre de Roca Negra es de 5 en Forever). 22 cadenas cuya meta es una banda (10 o más jugadores) no cuentan como acceso; su bit de banda no se escribe (`RAID_HIGHLIGHTS`).
 
-Equipo de las cadenas (`rw` en la misión inicial de cadenas de 2 o más; armas y armaduras clasificadas en datos locales, objetos ausentes conservados): 320 misiones iniciales, 1733 pares objeto-misión, 1 objetos sin tipo conocido, 98 nombres de misión de otra zona (`rn`), 31640 bytes añadidos (la agrupación de módulos no los cuenta).
+Equipo de las cadenas (`rw` en la misión inicial de cadenas de 2 o más; armas y armaduras clasificadas en datos locales, objetos ausentes conservados): 320 misiones iniciales, 1733 pares objeto-misión, 1 objetos sin tipo conocido, 98 nombres de misión de otra zona (`rn`), 31717 bytes añadidos (la agrupación de módulos no los cuenta).
 
 Perfil de nivel por mapa en `Index.lua` (`lv`, `lvR`, `xm`, `p85`, `st`; solo mapas de grupo distinto de Mazmorras; misiones de leveo sin banda, JcJ, eventos, repetibles, diarias, semanales, profesión ni stub): 47 mapas, 1975 misiones genéricas, 152 recuentos por raza, 4751 bytes. Nivel de las criaturas objetivo (`ml`, solo informativo, hostiles de la misma zona sin raros ni jefes, ml >= nivel + 1): 91 misiones, 543 bytes (la agrupación de módulos no los cuenta).
 
@@ -65,4 +65,4 @@ PNJ sin coordenadas iniciales completados con apariciones de datos locales: 44.
 
 Posadas (piedra de hogar, Alianza y neutrales de WoW Forever) en `Data/SendaMapas_Transporte.lua`: 35 posaderos en 31 mapas, 17 mapas sin posada con su posada habitual, 4 puntos de inicio; 6705 bytes. Copia fijada de posadas: `datos-navegacion/posadas_staging.json` (SHA-256: `72304237d4804fdabe96dbabc367613d9b5bed34b6194d780f29aee4bb735471`); cada posada se comprueba en la base auxiliar local (bit 128, subName Innkeeper, aparición en su zona, no Horda).
 
-Cabeceras de cadena entre módulos (dónde empieza la cadena, en `Index.lua`): 111 cabeceras con su inicio, 307 previas intermedias con su mapa (39 de ellas con su nombre y su restricción de clase, raza o exclusiva) y 33 previas exclusivas de la Horda en datos locales que nunca se muestran; 22583 bytes.
+Cabeceras de cadena entre módulos (dónde empieza la cadena, en `Index.lua`): 111 cabeceras con su inicio, 307 previas intermedias con su mapa (39 de ellas con su nombre y su restricción de clase, raza o exclusiva) y 33 previas exclusivas de la Horda en datos locales que nunca se muestran; 22911 bytes.
