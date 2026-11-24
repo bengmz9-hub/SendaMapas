@@ -10,6 +10,9 @@ local buffer = {}      -- entries captured before SendaMapasDB exists
 local capturing = false
 
 local function clip(text)
+    local plain = ns.Plain and ns.Plain(text)
+    if ns.Plain and text ~= nil and plain == nil then return "(valor protegido)" end       -- a secret value: never read
+    if ns.Plain then text = plain end
     text = tostring(text or "")
     if #text > MAX_TEXT then text = text:sub(1, MAX_TEXT) .. "…" end
     return text

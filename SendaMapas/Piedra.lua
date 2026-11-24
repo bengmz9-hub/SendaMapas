@@ -38,7 +38,7 @@ function ns:AreaName(id)
     if hit == nil then
         local name = C_Map and self.Call(C_Map.GetAreaInfo, id)
         hit = (type(name) == "string" and name ~= "") and name or false
-        areaNames[id] = hit
+        if hit then areaNames[id] = hit end          -- only a name found is remembered: a failure at the start is tried again
     end
     return hit or nil
 end
@@ -136,7 +136,7 @@ function ns:BoundInns()
         end
     end
     local status = candidatesStatus(found)
-    bindMemo.key, bindMemo.found, bindMemo.status = key, found, status
+    if status ~= "unknown" then bindMemo.key, bindMemo.found, bindMemo.status = key, found, status end    -- «unknown» is tried again
     return found, status, text
 end
 
@@ -150,6 +150,7 @@ function ns:HearthCooldown()
     end
     if not get then return nil end
     local ok, start, duration = pcall(get, HEARTH_ITEM)
+    if ok then start, duration = ns.Plain(start), ns.Plain(duration) end
     if not ok or type(start) ~= "number" or type(duration) ~= "number" then return nil end
     -- the global cooldown (NOT CONFIRMED whether the client gives it for the item) counts as ready (D3)
     if start <= 0 or duration <= GLOBAL_COOLDOWN then return 0, source end

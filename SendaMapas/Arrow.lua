@@ -462,16 +462,19 @@ function ns:TurnArrow()
 end
 
 -- With several candidate spots (objectives), aim at the nearest one the arrow can measure.
+local spotShared = {}          -- the player's position, measured once for all the candidate spots
 function ns:PickNearestSpot()
     local dest = self.dest
     if not dest or not dest.spots or #dest.spots < 2 then return end
     local best, bestDistance
+    spotShared.done = nil
     for _, spot in ipairs(dest.spots) do
-        local _, distance = self:ArrowVector(spot)
+        local _, distance = self:ArrowVector(spot, spotShared)
         if type(distance) == "number" and (not bestDistance or distance < bestDistance) then best, bestDistance = spot, distance end
     end
     if best and (best.map ~= dest.map or best.x ~= dest.x or best.y ~= dest.y) then
         dest.map, dest.x, dest.y = best.map, best.x, best.y
+        self.minimapDirty = true      -- the minimap star copies dest.x / dest.y when its targets are collected
         local info = self.Call(C_Map and C_Map.GetMapInfo, best.map)
         dest.mapName = ns.Plain(info and info.name) or dest.mapName
     end

@@ -201,6 +201,7 @@ function ns:ApplyNoticeSetting()
         notices.reward, notices.turnedIn, notices.hearth, notices.hearth_use, notices.nextZone = nil, nil, nil, nil, nil   -- review B1
         notices.forget = nil                                -- «N misiones del registro ya no dan XP»
         notices.accepted = nil                              -- the automatic acceptance
+        notices.guideMark, notices.guideOrphan = nil, nil   -- the marks of the guided route and its orphan quests
         self:RenderNotice()
     end
 end
@@ -255,7 +256,8 @@ local serial = 0
 ns.autoTurninTried = tried
 
 local function stillPending(token)
-    return pending and pending.serial == token and enabled() and not waiting[pending.title or pending.key]
+    return pending and pending.serial == token and enabled() and not waiting[pending.key]
+        and not (pending.title and waiting[pending.title])
 end
 
 local function later(token, fn)

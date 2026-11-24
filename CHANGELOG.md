@@ -1,8 +1,11 @@
 # Historial de cambios
 
-## 0.6.8-alpha (2026-11-24)
+## 0.6.9-alpha (2026-11-24)
 
-Estado: alpha; traducción completa de los títulos y objetivos de las misiones aún sin ver en el juego. Validación en Lua 5.1 con dobles: pasan `221 + 14` comprobaciones.
+Estado: alpha; las correcciones de la revisión del código aún sin ver en el juego. Validación en Lua 5.1 con dobles: pasan `223 + 14` comprobaciones.
 
-### Traducción al español
-- **Misiones que faltaban de los mapas** (`SendaMapas/Data/*.lua`): se traducen otras `977` misiones (títulos y textos de objetivo), con lo que el archivo pasa de `2.038` a `3.015` entradas y quedan en español todas las misiones reales de los 19 módulos; solo siguen en inglés las `48` entradas del juego sin contenido (`<UNUSED>`, `<NYI>`, `REUSE ME`). Se mantienen en inglés los nombres propios de PNJ, criaturas, objetos, facciones y lugares, igual que en lo ya traducido. Repartido entre dos revisores y comprobado: mismas líneas de objetivo que el original, marcadores y números conservados, y los 75 mapas compilan.
+### Ruta guiada
+- **Revisión del código (ruta guiada, flecha y minimapa)** (2026-11-24; `Guia.lua`, `Arrow.lua`, `MinimapPins.lua`, `MapPins.lua`): la piedra por hechizo solo marca un paso que toca (antes de cualquier parada de misión); las misiones superadas por «ponerse al día» ya no inflan «en espera» con sus objetivos y entrega; las marcas hechas a mano se podan si el paso ya no está en su sitio al cambiar la guía; el tooltip de una fila de misión de la guía dice «Mayús+clic: marcar este paso»; la caché de misiones sobrantes nota que una misión pasa a estar lista; `/smapas guia` avisa si la guía fijada no tiene nada que hacer; `reader.active` recuerda su respuesta; la flecha mide al jugador una sola vez por cada punto candidato y avisa al minimapa cuando cambia de punto, que ahora se reconstruye como respaldo cada 5 s en vez de cada 1,5 s; los valores de radio, zoom y mapa del cliente pasan por `ns.Plain`.
+
+### Panel y opciones
+- **Revisión del código (núcleo, piedra, avisos y opciones)** (`Core.lua`, `Modules.lua`, `Piedra.lua`, `AutoTurnin.lua`, `Options.lua`, `Errores.lua`): una misión saltada (o abandonada desde una ventana) deja de ser la elegida y suelta su marca; el nombre de zona que falla una vez se vuelve a pedir y la piedra sin sitio conocido no se recuerda como «desconocida»; la entrega automática comprueba también el id; «avisos no» quita además los avisos de marcas y de misiones sobrantes de la guía; una ventana de texto reutilizada no la toca una cola de abandono anterior y su botón vuelve a estar activo; al importar ajustes se limpian el orden de ruta y el sonido como al cambiarlos uno a uno y no se coloca una posición sin números; un clic en una fila pide una sola vez el estado de cada misión; un mapa ya compilado cambia aunque estés en combate; los reintentos de arranque paran en zonas sin misiones y una entrada nueva suelta los anteriores; los ids del registro y de misiones completadas se validan, y el registro de errores no lee valores protegidos.

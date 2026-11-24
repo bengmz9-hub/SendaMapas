@@ -106,7 +106,7 @@ end
 local function displayedMap()
     if not WorldMapFrame or type(WorldMapFrame.GetMapID) ~= "function" then return nil end
     local ok, value = pcall(WorldMapFrame.GetMapID, WorldMapFrame)
-    return ok and value or nil
+    return ok and ns.Plain(value) or nil
 end
 
 -- Zone (data id) of a UI map: area table first, then the localized/English names of the map.

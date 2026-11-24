@@ -151,6 +151,7 @@ function ns:ReadLog()
         local info = self.Call(C_QuestLog and C_QuestLog.GetInfo, index)
         -- the quest id is a table key: a secret one (ns.Plain -> nil) leaves the entry out
         local questID = type(info) == "table" and ns.Plain(info.questID) or nil
+        if type(questID) ~= "number" or questID <= 0 then questID = nil end          -- a header answers 0
         if info and not ns.Plain(info.isHeader) and questID then
             -- Olvidar misiones sin XP: the level and the title the game gives (NOT CONFIRMED on 16001), plain values only
             local complete, title, level = nil, ns.Plain(info.title), ns.Plain(info.level)
@@ -196,7 +197,7 @@ function ns:Context()
     c.active = function(id)
         if ns.log and ns.log[id] then return true end
         local index = ns.Call((C_QuestLog and C_QuestLog.GetLogIndexForQuestID) or GetQuestLogIndexByID, id)
-        return index ~= nil and index > 0
+        return type(index) == "number" and index > 0
     end
     c.ready = function(id)
         local value = ns.Call(C_QuestLog and C_QuestLog.ReadyForTurnIn, id)
@@ -366,11 +367,17 @@ function ns:LoadCompleted()
     local set, count = {}, 0
     local ids = self.Call(C_QuestLog and C_QuestLog.GetAllCompletedQuestIDs)
     if type(ids) == "table" then
-        for _, id in ipairs(ids) do set[id] = true; count = count + 1 end
+        for _, id in ipairs(ids) do
+            id = ns.Plain(id)
+            if type(id) == "number" then set[id] = true; count = count + 1 end
+        end
     else
         local legacy = self.Call(GetQuestsCompleted)       -- older clients: table id -> true
         if type(legacy) == "table" then
-            for id, done in pairs(legacy) do if done then set[id] = true; count = count + 1 end end
+            for id, done in pairs(legacy) do
+                id = ns.Plain(id)
+                if type(id) == "number" and ns.Plain(done) then set[id] = true; count = count + 1 end
+            end
         end
     end
     for id in pairs(self.saved and self.saved.turnedIn or {}) do set[id] = true end
@@ -383,13 +390,15 @@ end
 function ns:StartupLoad(attempt)
     attempt = attempt or 1
     if not self.saved then return end
+    if attempt == 1 then self.startupSerial = (self.startupSerial or 0) + 1 end     -- a new entering drops the older chain
+    local serial = self.startupSerial
     self:LoadCompleted()
     self:CheckZone()
     -- Logged in or /reload as a ghost: the client may not give the position at once, so the corpse arrow is asked
     -- again on every startup attempt (Arrow.lua also checks on PLAYER_ENTERING_WORLD).
     if self.CheckCorpse then self:CheckCorpse() end
-    if self.currentZone == nil and attempt < 4 and C_Timer and C_Timer.After then
-        C_Timer.After(attempt * 2, function() ns:StartupLoad(attempt + 1) end)
+    if self.currentZone == nil and self.currentMissing == nil and attempt < 4 and C_Timer and C_Timer.After then
+        C_Timer.After(attempt * 2, function() if ns.startupSerial == serial then ns:StartupLoad(attempt + 1) end end)
     end
 end
 
@@ -485,6 +494,12 @@ local function refresh(self)
         self.selected = nil
     end
     local markedBefore = self.markerQuest
+    -- a chosen quest that is now skipped (or abandoned from a window, which skips it) is dropped with its mark; one hidden by
+    -- the filters stays: a link of a chain may lead to it on purpose
+    if self.selected and self.saved.skipped[self.selected] then
+        if self.markerQuest == self.selected and self.ClearWaypoint then self:ClearWaypoint() end
+        self.selected = nil
+    end
     if self.selected and self.context.completed(self.selected) then self.selected = nil end
     if self.selected and self.saved.hideTurnin and self:EntryState(self.selected) == "turnin" then self.selected = nil end
     -- Order «Ruta»: the chosen quest is the first one of the first stop (or the one kept by hand, ns:RouteHold).
@@ -524,12 +539,14 @@ function ns:SelectQuest(id)
     -- Choosing a quest drops a manual coordinate mark (the quest takes over the destination again).
     if self.manualMark and self.ClearWaypoint then self:ClearWaypoint() end
     if self.activeData then self.saved.mapSelections[self.saved.map] = id end
-    if self.Render then self:Render() end
-    if self.AutoNavigate then self:AutoNavigate() end
-    -- Focus mode: the followed quest changed, so the faded marks change too (map and minimap). Phase 17 (review M1):
-    -- also with the world map open, as the chosen quest's mark is never faded by the level range.
-    local mapOpen = type(WorldMapFrame) == "table" and WorldMapFrame.IsShown and WorldMapFrame:IsShown()
-    if (self.saved.focusMode or mapOpen) and self.RefreshMapPins then self:RefreshMapPins() end
+    self:CachedStates(function()
+        if self.Render then self:Render() end
+        if self.AutoNavigate then self:AutoNavigate() end
+        -- Focus mode: the followed quest changed, so the faded marks change too (map and minimap). Phase 17 (review M1):
+        -- also with the world map open, as the chosen quest's mark is never faded by the level range.
+        local mapOpen = type(WorldMapFrame) == "table" and WorldMapFrame.IsShown and WorldMapFrame:IsShown()
+        if (self.saved.focusMode or mapOpen) and self.RefreshMapPins then self:RefreshMapPins() end
+    end)
 end
 
 function ns:SkippedCount()
@@ -988,7 +1005,11 @@ events:SetScript("OnEvent", function(_, event, name)
         if ns.HideNotice then ns:HideNotice("hearth"); ns:HideNotice("hearth_use"); ns:HideNotice("nextZone") end   -- notices of the zone left
         if ns.ResetNameCaches then ns:ResetNameCaches() end
         if ns.ResetArrowCache then ns:ResetArrowCache() end
-        if C_Timer and C_Timer.After then C_Timer.After(0.5, function() ns:CheckZone() end)
+        if C_Timer and C_Timer.After then
+            C_Timer.After(0.5, function()
+                if ns.ResetNameCaches then ns:ResetNameCaches() end      -- the map of the player may have changed since the event
+                ns:CheckZone()
+            end)
         else ns:CheckZone() end
     elseif event == "QUEST_TURNED_IN" then
         -- First argument is the quest id: remember the hand-in on this character.

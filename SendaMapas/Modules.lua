@@ -68,7 +68,7 @@ function ns:EnsureMap(zoneId)
     if self.mapData[zoneId] then return self.mapData[zoneId] end
     local info = self.Index.maps[zoneId]
     if not info then return nil, "Ese mapa no tiene módulo de misiones." end
-    if InCombatLockdown and InCombatLockdown() then return nil, "Cambia de mapa al salir de combate." end
+    if self.Call(InCombatLockdown) then return nil, "Cambia de mapa al salir de combate." end
     local ok, loaded, reason = pcall(self.LoadModule, self, info.mod)
     if not ok or not loaded or not self.mapData[zoneId] then
         return nil, "No se pudo cargar " .. info.mod .. ": " ..
@@ -195,7 +195,7 @@ function ns:CheckZone()
         if self.activeData then self:Refresh() elseif self.Render then self:Render() end
         return
     end
-    if InCombatLockdown and InCombatLockdown() then self.pendingZone = true; return end
+    if self.Call(InCombatLockdown) and not self.mapData[target] then self.pendingZone = true; return end
     if not self:LoadMap(target, true) and not self.activeData and target ~= self.saved.map then
         self:LoadMap(self.saved.map, true)
     end

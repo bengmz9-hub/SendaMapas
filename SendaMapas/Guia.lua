@@ -281,10 +281,17 @@ end
 -- read by NUMBER from the client (never matched by name), once per quest and build.
 local function newReader(self)
     local c = self.context or {}
-    local lines = {}
+    local lines, activeMemo = {}, {}
     local reader = {}
     function reader.completed(q) return c.completed and c.completed(q) and true or false end
-    function reader.active(q) return c.active and c.active(q) and true or false end
+    function reader.active(q)
+        local value = activeMemo[q]
+        if value == nil then
+            value = c.active and c.active(q) and true or false
+            activeMemo[q] = value
+        end
+        return value
+    end
     function reader.ready(q) return c.ready and c.ready(q) and true or false end
     function reader.objDone(q, o)
         if type(o) ~= "number" or not reader.active(q) then return false end
@@ -674,6 +681,7 @@ local function collect(self, reader, guide, data, inIds, firstOnly)
         end}
     end
     local picked, turned, items, waiting, nodata, full, hidden = {}, {}, {}, 0, 0, 0, 0
+    local passedQ = {}                 -- quests whose pickup was passed over (catch up): their other entries are passed too
     -- room in the quest log, counted along the guide as the plain planner does (Ruta.lua): each pickup takes one slot,
     -- each hand-in gives one back; a pickup without room waits (counted in `full`)
     local used = 0
@@ -700,7 +708,11 @@ local function collect(self, reader, guide, data, inIds, firstOnly)
             key = v2 and entryKey(letter, guide, e, index) or nil
             -- catch up (like Zygor / RestedXP): a pickup the player never took, before the progress made in this guide,
             -- is passed over (neither pending nor waiting)
-            if not (pass and e.k == "a" and index < pass.frontier and type(e.q) == "number" and not reader.active(e.q)) then
+            if pass and e.k == "a" and index < pass.frontier and type(e.q) == "number" and not reader.active(e.q) then
+                passedQ[e.q] = true
+            elseif pass and e.k ~= "a" and passedQ[e.q] and not reader.active(e.q) then
+                -- the objectives / hand-in of a quest never taken, passed over: neither pending nor waiting
+            else
                 open, missing = pending(self, reader, e, who, key, v2)
             end
         end
@@ -907,15 +919,27 @@ local function pruneDone(self)
     self.guidePrunedFor = routes
     local done = doneSet(self)
     if not done then return end
-    local names = {}
+    local names, stepsOf = {}, {}
     local a, b = guideList(routes)
-    for _, list in ipairs({a or {}, b or {}}) do
-        for _, g in ipairs(list) do if type(g) == "table" and type(g.name) == "string" then names[g.name] = true end end
+    for number, list in ipairs({a or {}, b or {}}) do
+        for _, g in ipairs(list) do
+            if type(g) == "table" and type(g.name) == "string" then
+                names[g.name] = true
+                stepsOf[(number == 1 and "A" or "B") .. "|" .. g.name] = g.steps
+            end
+        end
     end
     local gone = {}
     for key in pairs(done) do
-        local name = type(key) == "string" and key:match("^[^|]*|(.*)|[^|]*|[^|]*|[^|]*$")
-        if not (name and names[name]) then gone[#gone + 1] = key end
+        local letter, name, n, k, index
+        if type(key) == "string" then letter, name, n, k, index = key:match("^([^|]*)|(.*)|([^|]*)|([^|]*)|([^|]*)$") end
+        local steps = name and names[name] and stepsOf[letter .. "|" .. name]
+        local step = type(steps) == "table" and steps[tonumber(index) or 0]
+        -- the same entry is still at that index (an edited guide that inserts steps leaves its old marks orphaned)
+        if not (name and names[name]) or (type(steps) == "table" and not (type(step) == "table"
+            and tostring(step.n) == n and tostring(step.k) == k)) then
+            gone[#gone + 1] = key
+        end
     end
     for _, key in ipairs(gone) do done[key] = nil end
 end
@@ -1005,10 +1029,11 @@ end
 -- (saved.guideDone, «/smapas guia hecho no» undoes it) but without a notice.
 
 -- The first pending step of a kind in the guided plan of now (the plan keeps the order of the guide): id, record.
-local function firstStep(self, kind)
+local function firstStep(self, kind, leading)
     local plan = self.routePlan
     if not (plan and plan.guided) then return nil end
     for _, step in ipairs(plan.steps) do
+        if leading and step.kind ~= "paso" then return nil end          -- `leading`: only steps before any quest stop
         for _, id in ipairs(step.quests) do
             local q = type(id) == "number" and id < 0 and self:Quest(id)
             if q and q.gs and q.gs.k == kind then return id, q end
@@ -1094,7 +1119,7 @@ function ns:GuideEvent(event, ...)
         if ns.Plain(a1) ~= "player" then return false end
         local s3, s5 = ns.Plain(a3), ns.Plain(a5)
         if HEARTH_SPELLS[s3] or HEARTH_SPELLS[s5] then
-            local id, q = firstStep(self, "hearth")
+            local id, q = firstStep(self, "hearth", true)
             if id then return autoMark(self, id, q) end
         end
     elseif event == "UI_INFO_MESSAGE" then                                  -- decision 5: two texts of the client
@@ -1246,6 +1271,10 @@ function ns:FillQuestTooltip(tooltip, id)
     for _, tip in ipairs(self:GuideTipsFor(id)) do
         tooltip:AddLine("Consejo: " .. tip, 0.62, 0.62, 0.62, true)
     end
+    local plan = self.routePlan
+    if plan and plan.guided and plan.entryOf and plan.entryOf[id] then
+        tooltip:AddLine("Mayús+clic: marcar este paso de la guía", 0.6, 0.8, 0.9, true)
+    end
 end
 
 -- Step 3 (§2.8): quests in the log not used by any pending entry of the active set's race chain (version 2 only).
@@ -1269,10 +1298,15 @@ function ns:GuideOrphans()
     for id in pairs(self.log or {}) do if type(id) == "number" then logIds[#logIds + 1] = id end end
     if #logIds == 0 then return {} end
     table.sort(logIds)
+    local logMarks = {}                -- id plus «c» when the log says it is complete: a quest turning ready changes the signature
+    for index, id in ipairs(logIds) do
+        local entry = self.log[id]
+        logMarks[index] = id .. ((type(entry) == "table" and entry.complete) and "c" or "")
+    end
     local sig = table.concat({
         tostring(self.LocalRoutes), letter, tostring(who.race), tostring(who.class),
         tostring(self.saved and self.saved.guideDungeons == true and 1 or 0),
-        tostring(self.guideDoneRev or 0), tostring(fixed or ""), table.concat(logIds, ","),
+        tostring(self.guideDoneRev or 0), tostring(fixed or ""), table.concat(logMarks, ","),
     }, "|")
     local cache = self.guideOrphanCache
     if cache and cache.sig == sig then return cache.ids end
@@ -1537,11 +1571,14 @@ function ns:GuideCommand(arg)
         -- for room in the quest log and (version 2) entries hidden by filters or level range
         local counts = ""
         if guide then
-            local ok, _, waiting, nodata, full, hidden = pcall(collect, self, newReader(self), guide, self.activeData,
+            local ok, items, waiting, nodata, full, hidden = pcall(collect, self, newReader(self), guide, self.activeData,
                 idSet(self.activeData and self:Entries()), false)
             if ok then
                 counts = " · " .. waiting .. " en espera · " .. nodata .. " sin datos · " .. full .. " por registro lleno"
                     .. (isV2(self) and (" · " .. (hidden or 0) .. " ocultas por filtros") or "")
+                if type(self.saved.guideName) == "string" and #items == 0 then
+                    counts = counts .. " · sin nada que hacer ahora en la guía fijada (se usa el orden Ruta de siempre; /smapas guia auto)"
+                end
             end
         end
         self:Print("Ruta guiada" .. (two and (" " .. letter) or "") .. ": " .. name .. " · "

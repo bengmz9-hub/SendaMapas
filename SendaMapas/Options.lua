@@ -1017,6 +1017,8 @@ function ns:ShowTextWindow(title, body, apply, hint, labels)
     w.apply:SetShown(apply ~= nil)
     w.cancel.label:SetText(labels and labels.cancel or "Cancelar")
     w.cancel:SetShown(labels ~= nil and labels.cancel ~= nil)
+    w.session = (rawget(w, "session") or 0) + 1          -- a callback of an earlier use of this window (a queue) can tell it is not its own
+    w.apply:SetEnabled(true)
     w:Show()
     w.box:SetFocus()
     w.box:HighlightText()
@@ -1104,7 +1106,7 @@ function ns:ShowAbandonWindow(opts)
     end
     local ids, byId = {}, {}
     for _, item in ipairs(included) do ids[#ids + 1] = item.id; byId[item.id] = item end
-    local w
+    local w, session
     local apply
     if #ids > 0 then
         apply = function()
@@ -1113,6 +1115,7 @@ function ns:ShowAbandonWindow(opts)
             if blocked then w.hint:SetText("Ahora no: " .. blocked .. ". Vuelve a intentarlo después."); return end
             w.apply:SetEnabled(false)
             local started, why = ns:AbandonQuests(ids, function(run, stop)
+                if w.session ~= session then return end            -- the window was reused (another text) while the queue ran
                 w.apply:SetEnabled(true)
                 if #run.pending == 0 then w:Hide(); return end
                 local left = {}
@@ -1135,6 +1138,7 @@ function ns:ShowAbandonWindow(opts)
     end
     w = self:ShowTextWindow(formatTitle(#included), abandonText(included, excluded, nil, opts), apply, hint,
         {apply = confirm, cancel = cancel})
+    session = w.session
     return w
 end
 
@@ -1294,7 +1298,8 @@ function ns:ApplyImportedSettings(imported, previous)
     local saved = self.saved
     if self.ApplySkin then self:ApplySkin(true) end
     if self.ApplyArrowStyle then self:ApplyArrowStyle() end
-    if self.arrow and type(saved.arrowPosition) == "table" then
+    if self.arrow and type(saved.arrowPosition) == "table" and type(saved.arrowPosition.x) == "number"
+        and type(saved.arrowPosition.y) == "number" then
         self.arrow:ClearAllPoints()
         self.arrow:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", saved.arrowPosition.x, saved.arrowPosition.y)
     end
@@ -1310,7 +1315,7 @@ function ns:ApplyImportedSettings(imported, previous)
         end
         self.frame:SetScale(scale)
         self.hudScale = scale
-        if type(saved.hudPosition) == "table" then
+        if type(saved.hudPosition) == "table" and type(saved.hudPosition.x) == "number" and type(saved.hudPosition.y) == "number" then
             self.frame:ClearAllPoints()
             self.frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", saved.hudPosition.x, saved.hudPosition.y)
         end
@@ -1319,6 +1324,15 @@ function ns:ApplyImportedSettings(imported, previous)
     if saved.autoNavigate == false and self.ClearWaypoint then self:ClearWaypoint() end
     -- The navigator goes through its switch (moves the active destination to the new arrow).
     if imported.navigator ~= nil and self.SetNavigator then self:SetNavigator(saved.navigator, true) end
+    -- what the switches themselves clear when they change one by one (SetListOrder, SetProgressSound, SetHideTurnin)
+    if imported.listOrder ~= nil then
+        self.routeHold, self.routeCache = nil, nil
+        if saved.listOrder == "pasos" and previous.listOrder ~= "pasos" then self.selected = nil end
+    end
+    if imported.progressSound ~= nil then self.progressSeen = nil end
+    if saved.hideTurnin and self.markerQuest and self:EntryState(self.markerQuest) == "turnin" and self.ClearWaypoint then
+        self:ClearWaypoint()
+    end
     self:SetHUDMode(saved.hudMode, saved.visibleCount)
     if self.Refresh then self:Refresh() end
     if imported.autoSelect ~= nil and imported.autoSelect ~= previous.autoSelect and self.CheckZone then self:CheckZone() end

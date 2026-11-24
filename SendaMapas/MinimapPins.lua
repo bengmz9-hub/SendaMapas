@@ -60,11 +60,13 @@ end
 local function viewRadius()
     if C_Minimap and C_Minimap.GetViewRadius then
         local ok, radius = pcall(C_Minimap.GetViewRadius)
-        if ok and type(radius) == "number" and radius > 0 then return radius end
+        radius = ok and ns.Plain(radius) or nil
+        if type(radius) == "number" and radius > 0 then return radius end
     end
     if not (Minimap and Minimap.GetZoom) then return nil end
     local ok, zoom = pcall(Minimap.GetZoom, Minimap)
-    if not ok or type(zoom) ~= "number" then return nil end
+    zoom = ok and ns.Plain(zoom) or nil
+    if type(zoom) ~= "number" then return nil end
     -- Outdoors the zoom equals the "minimapZoom" setting; inside buildings it follows another scale.
     local outdoors = tonumber(cvar("minimapZoom")) == zoom
     local size = (outdoors and OUTDOOR or INDOOR)[zoom]
@@ -307,7 +309,7 @@ driver:SetScript("OnUpdate", function(self, elapsed)
     self.sinceTargets = self.sinceTargets + (elapsed or 0)
     if self.elapsed >= 0.1 then
         self.elapsed = 0
-        if ns.minimapDirty or self.sinceTargets >= 1.5 then
+        if ns.minimapDirty or self.sinceTargets >= 5 then
             self.sinceTargets = 0
             ns:RefreshMinimapPins()      -- new list of targets, measured and placed
         else

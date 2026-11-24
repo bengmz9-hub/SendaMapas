@@ -1,11 +1,11 @@
-# Senda Mapas 0.6.8-alpha
+# Senda Mapas 0.6.9-alpha
 
 - Addon de guía de misiones **por mapa** para **WoW Forever** (`Interface 16001`), en español.
 - Enfocado en **leveo (Alianza)**, en una sola carpeta y sin dependencias externas.
 - Carga los datos de cada mapa bajo demanda al entrar en la zona.
 
 ## Instalación
-- Cierra el juego y descomprime `SendaMapas-0.6.8-alpha.zip` en `World of Warcraft\_forever_\Interface\AddOns\`.
+- Cierra el juego y descomprime `SendaMapas-0.6.9-alpha.zip` en `World of Warcraft\_forever_\Interface\AddOns\`.
 - Debe quedar una sola carpeta `AddOns\SendaMapas\` con `SendaMapas.toc` dentro.
 - Activa **Senda Mapas** en la lista de addons.
 
