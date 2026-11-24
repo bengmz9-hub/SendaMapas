@@ -725,14 +725,19 @@ function ns:RouteStopText(index)
     end
     -- the entity most quests of the stop share (the first one on a tie): the giver or the receiver
     local function npc(field)
+        -- counted by NPC (id), not by table: every quest of the data carries its own table for the same NPC
+        local function keyOf(entity)
+            if entity.i ~= nil then return tostring(entity.k) .. ":" .. tostring(entity.i) end
+            return entity.n or entity
+        end
         local uses, best = {}, nil
         for _, id in ipairs(step.quests) do
             local entity = plan.ent[id] and plan.ent[id][field]
-            if entity then uses[entity] = (uses[entity] or 0) + 1 end
+            if entity then uses[keyOf(entity)] = (uses[keyOf(entity)] or 0) + 1 end
         end
         for _, id in ipairs(step.quests) do
             local entity = plan.ent[id] and plan.ent[id][field]
-            if entity and (not best or uses[entity] > uses[best]) then best = entity end
+            if entity and (not best or uses[keyOf(entity)] > uses[keyOf(best)]) then best = entity end
         end
         if not best then return "" end
         local name = best.k == "n" and self:NpcName(best.i, best.n) or best.n

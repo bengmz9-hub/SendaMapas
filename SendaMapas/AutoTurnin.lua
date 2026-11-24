@@ -1,6 +1,9 @@
 -- Hand in finished quests on its own: talking to the turn-in NPC picks the finished quest, presses Continue
--- and takes the reward. Never accepts new quests. On by default (nil counts as on; only an explicit false turns it off, ns.saved.autoTurnin); Shift pauses it.
+-- and takes the reward. On by default (nil counts as on; only an explicit false turns it off, ns.saved.autoTurnin); Shift pauses it.
 -- With several rewards to choose from it leaves the window open and asks the player to choose.
+-- Automatic acceptance (ns.saved.autoAccept, on by default, /smapas autoaceptar si|no; Shift pauses it): it takes ONLY the
+-- quests the guided route asks for next (ns:GuideWantsQuest, Guia.lua): never one the guide does not list, nor a trivial
+-- or far-below-range one, nor inside an instance. Hand-ins always go first.
 local _, ns = ...
 
 local function enabled()
@@ -197,6 +200,7 @@ function ns:ApplyNoticeSetting()
     if self:TurninNotice() == "off" then
         notices.reward, notices.turnedIn, notices.hearth, notices.hearth_use, notices.nextZone = nil, nil, nil, nil, nil   -- review B1
         notices.forget = nil                                -- «N misiones del registro ya no dan XP»
+        notices.accepted = nil                              -- the automatic acceptance
         self:RenderNotice()
     end
 end
@@ -304,19 +308,20 @@ local function fromGossip()
             local title = key and questTitle(info.title)
             if key and ns.Plain(info.isComplete) and not waiting[key] and not (title and waiting[title]) and not tried[key] then
                 chain(key, title, index, function() ns.Call(C_GossipInfo.SelectActiveQuest, key) end)
-                return
+                return true
             end
         end
-        return
+        return false
     end
     -- No C_GossipInfo: the old API, by position, only with a verifiable format. One attempt per window.
     for index, info in ipairs(legacyActive() or {}) do
         if info.isComplete and not waiting[info.title] and not tried[info.title] then
             tried[info.title] = true
             if type(SelectGossipActiveQuest) == "function" then ns.Call(SelectGossipActiveQuest, index) end
-            return
+            return true
         end
     end
+    return false
 end
 
 -- Quest greeting window (NPC with only quests): same, by position.
@@ -326,9 +331,68 @@ local function fromGreeting()
         title, complete = ok and questTitle(title) or nil, ok and ns.Plain(complete) or nil
         if complete and not (title and waiting[title]) then
             ns.Call(SelectActiveQuest, index)
-            return
+            return true
         end
     end
+    return false
+end
+
+-- ------------------------------------------------------------------------------------ automatic acceptance
+local function acceptEnabled()
+    return ns.saved and ns.saved.autoAccept ~= false and not ns.Call(IsShiftKeyDown)
+end
+
+-- The guided route asks for this quest now (Guia.lua); without the guide module nothing is ever accepted.
+local function wanted(questId)
+    return type(questId) == "number" and questId > 0 and type(ns.GuideWantsQuest) == "function"
+        and ns:GuideWantsQuest(questId) and true or false
+end
+
+-- A quest already tried is not selected again for a while (a failed acceptance, a full log): never a loop.
+local ACCEPT_GAP = 10
+local acceptedAt = {}
+local acceptSerial, acceptWatch, acceptNotice = 0, nil, nil
+ns.autoAcceptTried = acceptedAt
+
+-- Gossip window: the first available quest the guide asks for. Only with C_GossipInfo (it gives the quest id; the old
+-- API gives only a title, which is never compared with the guide). SelectAvailableQuest takes the quest id in some clients
+-- and the position in others (NOT CONFIRMED in 16001): id first, ~0.6 s later the position if the gossip is still open.
+local function fromGossipAvailable()
+    if not (C_GossipInfo and C_GossipInfo.GetAvailableQuests and C_GossipInfo.SelectAvailableQuest) then return false end
+    local quests = ns.Call(C_GossipInfo.GetAvailableQuests)
+    local now = ns.Call(GetTime) or 0
+    for index, info in ipairs(type(quests) == "table" and quests or {}) do
+        local key = type(info) == "table" and ns.Plain(info.questID) or nil
+        local recent = key and acceptedAt[key] and now - acceptedAt[key] < ACCEPT_GAP
+        if type(key) == "number" and not ns.Plain(info.isTrivial) and not recent and wanted(key) then
+            acceptedAt[key] = now
+            acceptSerial = acceptSerial + 1
+            local token = acceptSerial
+            acceptWatch = token
+            ns.Call(C_GossipInfo.SelectAvailableQuest, key)
+            if C_Timer and C_Timer.After then
+                C_Timer.After(RETRY_DELAY, function()
+                    if acceptWatch == token and acceptEnabled() then
+                        acceptWatch = nil
+                        ns.Call(C_GossipInfo.SelectAvailableQuest, index)
+                    end
+                end)
+            end
+            return true
+        end
+    end
+    return false
+end
+
+-- Quest window of a new quest: accepted only when the guide asks for exactly this quest.
+local function acceptDetail()
+    local questId = ns.Call(GetQuestID)
+    if not wanted(questId) then return false end
+    acceptWatch = nil
+    acceptNotice = {title = (not ns:InInstance() and questTitle(ns.Call(GetTitleText))) or "la misión",
+        at = ns.Call(GetTime)}
+    ns.Call(AcceptQuest)
+    return true
 end
 
 local handlers = {
@@ -466,12 +530,25 @@ pcall(events.RegisterEvent, events, "QUEST_TURNED_IN")
 pcall(events.RegisterEvent, events, "GOSSIP_CLOSED")
 pcall(events.RegisterEvent, events, "QUEST_FINISHED")
 pcall(events.RegisterEvent, events, "QUEST_DETAIL")
+pcall(events.RegisterEvent, events, "QUEST_ACCEPTED")
 -- Review M1: the notice of an automatic hand-in only for a QUEST_TURNED_IN that comes within this many seconds of
 -- the hand-in. QUEST_FINISHED does not clear it: whether it comes before or after QUEST_TURNED_IN on 16001 is NOT
 -- CONFIRMED. A new quest window (QUEST_DETAIL) and switching the hand-in off clear it.
 local AUTO_TURNIN_WINDOW = 5
 events:SetScript("OnEvent", function(_, event, ...)
     if event == "QUEST_DETAIL" then ns.lastAutoTurnin, ns.lastAutoTurninAt = nil, nil end
+    if event == "QUEST_DETAIL" or event == "GOSSIP_CLOSED" then acceptWatch = nil end
+    -- the notice of an automatic acceptance, once the client confirms it (QUEST_ACCEPTED), within a few seconds
+    if event == "QUEST_ACCEPTED" then
+        local mine, now = acceptNotice, ns.Call(GetTime)
+        acceptNotice = nil
+        if mine and (type(mine.at) ~= "number" or type(now) ~= "number" or now - mine.at <= AUTO_TURNIN_WINDOW)
+            and ns:TurninNotice() ~= "off" then
+            ns:ShowNotice({key = "accepted", icon = "Glyph_exclaim", color = "rec", priority = 1, duration = 4,
+                line1 = "Aceptada: " .. mine.title, line2 = "Aceptación automática · Mayús la pausa"})
+        end
+        return
+    end
     -- Review B1 (phase 17): a new hand-in window forgets an earlier attempt; the handler sets it again only when it
     -- hands in itself (not with Shift held, the switch off, or a reward to choose).
     if event == "QUEST_COMPLETE" or event == "QUEST_PROGRESS" then ns.lastAutoTurnin, ns.lastAutoTurninAt = nil, nil end
@@ -508,8 +585,12 @@ events:SetScript("OnEvent", function(_, event, ...)
     if event == "QUEST_TURNED_IN" then
         for title in pairs(waiting) do waiting[title] = nil end       -- a hand-in happened: choices may be new
         for key in pairs(tried) do tried[key] = nil end
-    elseif enabled() and handlers[event] then
-        handlers[event]()
+    else
+        local acted = enabled() and handlers[event] and handlers[event]() or false
+        if not acted and acceptEnabled() then
+            if event == "GOSSIP_SHOW" then fromGossipAvailable()
+            elseif event == "QUEST_DETAIL" then acceptDetail() end
+        end
     end
 end)
 ns.autoTurninHandlers = handlers     -- for the tests
@@ -525,10 +606,27 @@ function ns:SetAutoTurnin(enabled, quiet)
     if self.RenderFilterOptions then self:RenderFilterOptions() end
 end
 
+function ns:SetAutoAccept(enabled, quiet)
+    self.saved.autoAccept = enabled and true or false
+    if not self.saved.autoAccept then acceptNotice, acceptWatch = nil, nil end
+    if not quiet then
+        self:Print(self.saved.autoAccept and "Aceptación automática de misiones de la guía: activada (Mayús la pausa)." or
+            "Aceptación automática de misiones de la guía: desactivada.")
+    end
+end
+
 -- /smapas autoentregar [si|no]: added in front of the command list of Core.lua; no word switches it.
 local coreSlash = SlashCmdList.SENDAMAPAS
 SlashCmdList.SENDAMAPAS = function(message)
     local command = (message or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    local accept = command:match("^autoaceptar%s*(%S*)$")
+    if accept and ns.saved then
+        if accept == "si" or accept == "s\195\173" or accept == "on" then ns:SetAutoAccept(true)
+        elseif accept == "no" or accept == "off" then ns:SetAutoAccept(false)
+        elseif accept == "" then ns:SetAutoAccept(ns.saved.autoAccept == false)
+        else ns:Print("Uso: /smapas autoaceptar si | no") end
+        return
+    end
     local word = command:match("^autoentregar%s*(%S*)$")
     if not word or not ns.saved then return coreSlash(message) end
     if word == "si" or word == "s\195\173" or word == "on" then ns:SetAutoTurnin(true)

@@ -1,5 +1,6 @@
 -- Options window: one tab per kind of option, a column of tabs on the left, no scrolling.
--- Tabs: Panel, Seguimiento (con la entrega automática), Flecha, Mapa (M), Minimapa, Filtros. Every switch has a slash twin.
+-- Tabs: Panel, Aspecto (con la flecha: dos páginas, «Aspecto» y «Flecha», con su selector), Seguimiento (con la entrega
+-- automática), Mapa (M), Minimapa, Filtros... Every switch has a slash twin.
 local _, ns = ...
 local ui = ns.ui
 local button, text, place, bounded = ui.button, ui.text, ui.place, ui.bounded
@@ -11,15 +12,17 @@ local TABS = {
     {key = "panel", label = "Panel", glyph = "Glyph_window"},
     {key = "skin", label = "Aspecto", glyph = "Glyph_swatch"},
     {key = "follow", label = "Seguimiento", glyph = "Glyph_check"},
-    {key = "arrow", label = "Flecha", glyph = "Glyph_arrow"},
     {key = "map", label = "Mapa (M)", glyph = "Glyph_pin"},
     {key = "minimap", label = "Minimapa", glyph = "Glyph_ringdot"},
     {key = "filters", label = "Filtros", glyph = "Glyph_funnel"},
     {key = "actions", label = "Acciones", glyph = "Glyph_bolt"},
     {key = "gear", label = "Equipo", glyph = "Glyph_tunic"},
-    {key = "level", label = "Nivel", glyph = "Glyph_spark"},       -- phase 17: 10th tab, y = -408 to -440
+    {key = "level", label = "Nivel", glyph = "Glyph_spark"},       -- phase 17: 10th tab; nine since the arrow joined the look
 }
 local TAB_ALIAS = {appearance = "panel", tracking = "follow"}
+-- Pages inside one tab: «Flecha» is a page of the «Aspecto» tab (the section keeps its own name, so saved.optionsTab and
+-- ns:SetOptionsSection("arrow") still work).
+local PAGE_OF = {arrow = "skin"}
 local INTENSITY_NAMES = {"Normal", "Intensa", "Máxima"}
 
 local function heading(tab, y, label)
@@ -209,8 +212,7 @@ local function buildPanel(self, tab)
 end
 
 local function buildSkin(self, tab)
-    heading(tab, -4, "Aspecto del panel")
-    note(tab, -24, "Cambia el panel, la lista de mapas y esta ventana al instante.")     -- one line (cards at -50)
+    note(tab, -30, "Cambia el panel, la lista de mapas y esta ventana al instante.")     -- one line (the selector is on top; cards at -50)
     self.skinButtons = {}
     local width = math.floor((CONTENT_W - 10) / 2)
     for index, key in ipairs(ns.Skins.order) do
@@ -286,7 +288,6 @@ local function buildFollow(self, tab)
 end
 
 local function buildArrow(self, tab)
-    heading(tab, -4, "Flecha de dirección")
     addToggle(tab, "navigator", -32, "Flecha a usar",
         function()
             if ns.saved.navigator ~= "tomtom" then return "Flecha propia" end
@@ -594,7 +595,34 @@ local function buildLevel(self, tab)
         .. "terminar el mapa o pasar su nivel (/smapas zona).")
 end
 
-local BUILDERS = {panel = buildPanel, skin = buildSkin, follow = buildFollow, arrow = buildArrow, map = buildMap,
+-- The «Aspecto» tab: a selector «Aspecto | Flecha» at the top (24 px, y = -2) and two pages of the size of a tab, one on
+-- top of the other (only one shown). ns.optionTabs.skin and ns.optionTabs.arrow are the PAGES; the tab's own frame is
+-- ns.optionHolders.skin.
+local PAGE_LABELS = {skin = "Aspecto", arrow = "Flecha"}
+local function buildLook(self, holder)
+    self.optionHolders = self.optionHolders or {}
+    self.optionHolders.skin = holder
+    self.optionPageButtons = {}
+    local width = 110
+    for index, key in ipairs({"skin", "arrow"}) do
+        local b = button(holder, PAGE_LABELS[key], width, 0, function() ns:SetOptionsSection(key) end)
+        b:SetHeight(24)
+        place(b, holder, (index - 1) * (width + 6), -2)
+        self.optionPageButtons[key] = b
+    end
+    local pages = {}
+    for _, key in ipairs({"skin", "arrow"}) do
+        local page = CreateFrame("Frame", nil, holder)
+        page:SetSize(CONTENT_W, CONTENT_H)
+        page:SetPoint("TOPLEFT", holder, "TOPLEFT", 0, 0)
+        self.optionTabs[key] = page
+        pages[key] = page
+    end
+    buildSkin(self, pages.skin)
+    buildArrow(self, pages.arrow)
+end
+
+local BUILDERS = {panel = buildPanel, skin = buildLook, follow = buildFollow, map = buildMap,
     minimap = buildMinimap, filters = buildFilters, actions = buildActions, gear = buildGear, level = buildLevel}
 
 -- ---------------------------------------------------------------------------------- window
@@ -661,7 +689,7 @@ function ns:CreateHUDSettings()
         content:SetSize(CONTENT_W, CONTENT_H)
         content:SetPoint("TOPLEFT", f, "TOPLEFT", 162, -50)
         self.optionTabs[tab.key] = content
-        BUILDERS[tab.key](self, content)
+        BUILDERS[tab.key](self, content)          -- (the «Aspecto» builder replaces its entry with its page and keeps the holder)
     end
     -- Older names, kept so other parts and the tests can still find them.
     self.appearanceOptions, self.trackingOptions, self.filtersOptions = self.optionTabs.panel, self.optionTabs.follow, self.optionTabs.filters
@@ -679,7 +707,9 @@ function ns:SetOptionsSection(section)
     if not self.optionTabs or not self.optionTabs[section] then section = "panel" end
     self.optionsSection = section
     self.saved.optionsTab = section
-    for key, content in pairs(self.optionTabs) do content:SetShown(key == section) end
+    local holders = self.optionHolders or {}
+    for key, content in pairs(self.optionTabs) do content:SetShown(key == section) end      -- a tab or a page of one
+    for key, holder in pairs(holders) do holder:SetShown(key == (PAGE_OF[section] or section)) end
     self:RenderOptions()
 end
 
@@ -687,8 +717,17 @@ end
 -- title; the others the button colors with glyph and text in buttonText. Since phase 14c the active tab is no longer
 -- marked by disabling its button (b.active).
 local function paintTabs(self)
+    local activeTab = PAGE_OF[self.optionsSection] or self.optionsSection
+    for key, b in pairs(self.optionPageButtons or {}) do        -- the selector «Aspecto | Flecha»
+        local on = key == self.optionsSection
+        b.active = on
+        b:SetEnabled(true)
+        if on then surfaceKeys(b, "rowSel", "selBorder") else surfaceKeys(b, "button", "buttonBorder") end
+        local c = colorOf(on and "title" or "buttonText")
+        b.label:SetTextColor(c[1], c[2], c[3], 1)
+    end
     for key, b in pairs(self.optionTabButtons) do
-        local active = key == self.optionsSection
+        local active = key == activeTab
         b.active = active
         b:SetEnabled(true)
         if active then surfaceKeys(b, "rowSel", "selBorder") else surfaceKeys(b, "button", "buttonBorder") end
@@ -1175,7 +1214,7 @@ local SETTINGS = {
     {"minimapPins", bool, writeBool}, {"minimapScale", int(50, 200), writeInt},
     {"textSize", oneOf("small", "normal", "large")}, {"stateSymbols", bool, writeBool},
     {"progressSound", bool, writeBool}, {"autoNavigate", bool, writeBool}, {"autoSelect", bool, writeBool},
-    {"hideTurnin", bool, writeBool}, {"openAll", bool, writeBool}, {"autoTurnin", bool, writeBool},
+    {"hideTurnin", bool, writeBool}, {"openAll", bool, writeBool}, {"autoTurnin", bool, writeBool}, {"autoAccept", bool, writeBool},
     {"listOrder", oneOf("progresion", "cercania", "pasos", "ruta")}, {"lockedPins", bool, writeBool},
     {"minimapButton", bool, writeBool}, {"minimapButtonAngle", int(0, 359), writeInt}, {"mapCoords", bool, writeBool},
     {"focusMode", bool, writeBool}, {"lightMapIcons", bool, writeBool}, {"turninNotice", function(value)       -- "both" (the old chat mode) imports as "panel"

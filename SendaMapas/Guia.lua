@@ -384,6 +384,30 @@ local function pending(self, reader, e, who, key, v2)
     return true
 end
 
+-- Automatic acceptance (AutoTurnin.lua): does the guided route ask for this quest NOW? Only the quests of the first
+-- pickup stop of the guided plan (the next «recoger» of the guide), never a quest the guide does not list, a skipped
+-- one, one inside an instance, or one far below the player's level range (a chain's next step is never «too low»).
+function ns:GuideWantsQuest(id)
+    if type(id) ~= "number" or not self.saved or self:InInstance() then return false end
+    if self.saved.skipped and self.saved.skipped[id] then return false end
+    local plan = self.routePlan
+    if not (plan and plan.guided and type(plan.steps) == "table") then return false end
+    local listed = false
+    for _, step in ipairs(plan.steps) do
+        if step.kind == "recoger" then
+            for _, q in ipairs(step.quests or {}) do
+                if q == id then listed = true; break end
+            end
+            break                                  -- only the next pickup stop
+        end
+    end
+    if not listed then return false end
+    local quest = self:Quest(id)
+    if not quest then return false end
+    local show, _, kind = self:LevelShow(quest, "available")
+    return not (show ~= "show" and kind == "below")
+end
+
 -- For the tests and /smapas guia: is this entry pending now?
 function ns:GuidePending(e)
     return (pending(self, newReader(self), e, self.context or {}, nil, isV2(self)))
@@ -626,9 +650,12 @@ local function collect(self, reader, guide, data, inIds, firstOnly)
             if type(e) == "table" and KIND[e.k] then
                 lastQuest = index
                 if e.k == "t" and type(e.q) == "number" and reader.completed(e.q) then lastDoneT = index end
-                -- the player's progress along the guide: the last quest handed in, or picked up and still in the log
-                if type(e.q) == "number" and ((e.k == "t" and reader.completed(e.q))
-                    or (e.k == "a" and (reader.completed(e.q) or reader.active(e.q)))) then frontier = index end
+                -- the player's progress along the guide: the last quest handed in, or picked up and still in the log;
+                -- an entry that does not apply to the player (`only`) or a skipped quest is no progress
+                if type(e.q) == "number" and not (self.saved.skipped and self.saved.skipped[e.q])
+                    and not (e.only ~= nil and Guide.Eval(e.only, who) == false)
+                    and ((e.k == "t" and reader.completed(e.q))
+                        or (e.k == "a" and (reader.completed(e.q) or reader.active(e.q)))) then frontier = index end
             end
         end
         if self.saved.guideCatchUp == false then frontier = 0 end
@@ -1117,9 +1144,15 @@ function ns:GuideTick()
     if not (plan and plan.guided) or self.Call(UnitOnTaxi, "player") then return false end
     local id, q = firstStep(self, "note")
     if id and near(self, q, NEAR_NOTE, NEAR_NOTE_MAP) then return autoMark(self, id, q) end
-    for _, kind in ipairs({"hearth", "fly"}) do
-        local sid, sq = firstStep(self, kind)
-        if sid and sq.gs.to and self.currentZone == sq.gs.to then return autoMark(self, sid, sq) end
+    -- «hearth» / «fly» with an area `to`: only when the player is seen ARRIVING there (the zone of the previous tick was
+    -- another one); being in `to` already, a step still far ahead in the guide is never marked
+    local zone, before = self.currentZone, self.guideTickZone
+    self.guideTickZone = zone
+    if before ~= nil and before ~= zone then
+        for _, kind in ipairs({"hearth", "fly"}) do
+            local sid, sq = firstStep(self, kind)
+            if sid and sq.gs.to and zone == sq.gs.to then return autoMark(self, sid, sq) end
+        end
     end
     return false
 end
@@ -1128,7 +1161,14 @@ local GUIDE_EVENTS = {"HEARTHSTONE_BOUND", "UNIT_SPELLCAST_SUCCEEDED", "UI_INFO_
     "PLAYER_CONTROL_LOST", "TRAINER_SHOW", "TRAINER_CLOSED", "MERCHANT_SHOW", "MERCHANT_CLOSED"}
 Guide.Events = GUIDE_EVENTS
 local guideEvents = CreateFrame("Frame")
-for _, event in ipairs(GUIDE_EVENTS) do pcall(guideEvents.RegisterEvent, guideEvents, event) end
+for _, event in ipairs(GUIDE_EVENTS) do
+    -- the spell event only for the player (no handler run for every cast of a group or a city); plain event as a fallback
+    local registered = false
+    if event == "UNIT_SPELLCAST_SUCCEEDED" and type(guideEvents.RegisterUnitEvent) == "function" then
+        registered = pcall(guideEvents.RegisterUnitEvent, guideEvents, event, "player")
+    end
+    if not registered then pcall(guideEvents.RegisterEvent, guideEvents, event) end
+end
 guideEvents:SetScript("OnEvent", function(_, event, ...)
     local ok, err = pcall(ns.GuideEvent, ns, event, ...)
     if not ok and ns.ReportIssue then ns:ReportIssue("Ruta guiada", err) end
