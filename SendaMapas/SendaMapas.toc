@@ -1,0 +1,56 @@
+## Interface: 16001
+## Title: Senda Mapas
+## Notes: Guía de misiones por mapa (WoW Forever). Compila bajo demanda los datos del mapa actual.
+## Author: Proyecto local ADDONWOW
+## Version: 0.6.3-alpha
+## SavedVariablesPerCharacter: SendaMapasDB
+
+Index.lua
+Data\SendaMapas_EK01.lua
+Data\SendaMapas_KAL01.lua
+Data\SendaMapas_ISLA01.lua
+Data\SendaMapas_EK02.lua
+Data\SendaMapas_EK03.lua
+Data\SendaMapas_EK04.lua
+Data\SendaMapas_KAL02.lua
+Data\SendaMapas_EK05.lua
+Data\SendaMapas_EK06.lua
+Data\SendaMapas_EK07.lua
+Data\SendaMapas_KAL03.lua
+Data\SendaMapas_KAL04.lua
+Data\SendaMapas_EK08.lua
+Data\SendaMapas_EK09.lua
+Data\SendaMapas_KAL05.lua
+Data\SendaMapas_KAL06.lua
+Data\SendaMapas_KAL07.lua
+Data\SendaMapas_MAZ01.lua
+Data\SendaMapas_MAZ02.lua
+Data\SendaMapas_Transporte.lua
+Skins.lua
+Aspecto.lua
+Rows.lua
+Rows_kit.lua
+Rows_bar.lua
+Rows_pill.lua
+Rows_featured.lua
+Rows_rail.lua
+Rows_card.lua
+Rows_table.lua
+Core.lua
+Errores.lua
+Filters.lua
+Modules.lua
+MapResolver.lua
+Navigation.lua
+Ruta.lua
+Guia.lua
+Rutas.lua
+Arrow.lua
+MapPins.lua
+MinimapPins.lua
+UI.lua
+HUD.lua
+Options.lua
+AutoTurnin.lua
+Piedra.lua
+SelfTest.lua

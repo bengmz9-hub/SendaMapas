@@ -1,0 +1,20 @@
+<Bindings>
+	<Binding name="SENDAMAPAS_TOGGLE" header="SENDAMAPAS">
+		SendaMapas:BindingAction("toggle")
+	</Binding>
+	<Binding name="SENDAMAPAS_NEXT">
+		SendaMapas:BindingAction("next")
+	</Binding>
+	<Binding name="SENDAMAPAS_PREV">
+		SendaMapas:BindingAction("prev")
+	</Binding>
+	<Binding name="SENDAMAPAS_MARK">
+		SendaMapas:BindingAction("mark")
+	</Binding>
+	<Binding name="SENDAMAPAS_MAPS">
+		SendaMapas:BindingAction("maps")
+	</Binding>
+	<Binding name="SENDAMAPAS_SKIP">
+		SendaMapas:BindingAction("skip")
+	</Binding>
+</Bindings>
