@@ -202,6 +202,7 @@ function ns:ApplyNoticeSetting()
         notices.forget = nil                                -- «N misiones del registro ya no dan XP»
         notices.accepted = nil                              -- the automatic acceptance
         notices.guideMark, notices.guideOrphan = nil, nil   -- the marks of the guided route and its orphan quests
+        notices.trainer = nil                               -- the class trainer reminder (Instructor.lua)
         self:RenderNotice()
     end
 end
