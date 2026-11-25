@@ -221,25 +221,60 @@ local function parse(list, who)
     return v
 end
 
+-- Memoization for Guide.Eval: keyed by player class, race, guideDungeons and `only` string (sentinel for nil).
+local EVAL_NIL = {}
+local EVAL_CTX_MAX, EVAL_ENTRY_MAX = 8, 1024
+local evalCache, evalContexts = {}, 0
+
 -- true, false or nil for the condition `only` and the player `who` ({class = class file, race = race file}).
 function Guide.Eval(only, who)
     if type(only) ~= "string" or #only > Guide.MAX_ONLY then return nil end
+    who = who or {}
+    local classKey = type(who.class) == "string" and who.class:lower() or ""
+    local raceRaw = type(who.race) == "string" and who.race or ""
+    local dgKey = ((who.guideDungeons == true) or (ns.saved and ns.saved.guideDungeons == true)) and "1" or "0"
+    local ctxKey = classKey .. "\0" .. raceRaw .. "\0" .. dgKey
+    local bucket = evalCache[ctxKey]
+    if bucket then
+        local hit = bucket.v[only]
+        if hit ~= nil then
+            if hit == EVAL_NIL then return nil end
+            return hit
+        end
+    end
+    local result
     local list = tokens(only)
-    if not list or #list == 0 then return nil end
-    for _, t in ipairs(list) do if t == "if" then return nil end end
-    local ok, value = pcall(parse, list, who or {})
-    if ok then return value end
-    return nil
+    if list and #list > 0 then
+        local hasIf = false
+        for _, t in ipairs(list) do if t == "if" then hasIf = true; break end end
+        if not hasIf then
+            local ok, value = pcall(parse, list, who)
+            if ok then result = value end
+        end
+    end
+    if not bucket then
+        if evalContexts >= EVAL_CTX_MAX then evalCache, evalContexts = {}, 0 end
+        bucket = {n = 0, v = {}}
+        evalCache[ctxKey] = bucket
+        evalContexts = evalContexts + 1
+    end
+    if bucket.n < EVAL_ENTRY_MAX then
+        bucket.v[only] = result == nil and EVAL_NIL or result
+        bucket.n = bucket.n + 1
+    end
+    return result
 end
 
 -- ---------------------------------------------------------------------------------------------
 -- The chain of guides of a race: the first guide (list order) whose defaultfor names the race, then by `next`, without
--- cycles. Returns the chain (list).
+-- cycles. Returns the chain (list). Cached by guides table reference and normalized race key.
+local chainCache = {guides = nil, key = nil, chain = nil}
 function Guide.Chain(guides, race)
     local F = ns.Filters
     local key = F.RaceKey(race)
+    if not key or type(guides) ~= "table" then return {} end
+    if chainCache.guides == guides and chainCache.key == key then return chainCache.chain end
     local chain = {}
-    if not key or type(guides) ~= "table" then return chain end
     local byName, start = {}, nil
     for _, g in ipairs(guides) do
         if type(g) == "table" and type(g.name) == "string" and not byName[g.name] then byName[g.name] = g end
@@ -258,6 +293,7 @@ function Guide.Chain(guides, race)
         chain[#chain + 1] = g
         g = type(g.next) == "string" and byName[g.next] or nil
     end
+    chainCache.guides, chainCache.key, chainCache.chain = guides, key, chain
     return chain
 end
 
@@ -309,13 +345,18 @@ end
 
 -- Whether Senda Mapas has data for quest q: true, false, or nil when it cannot know yet (the module of zone `a` cannot be
 -- compiled in combat). The module of `a` is compiled first (never loaded as the active map).
-local function haveData(self, q, a)
+local function haveData(self, q, a, tried)
     if self:Quest(q) then return true end
     a = tonumber(a)
     if a and self.Index.maps[a] and not self.mapData[a] and self.EnsureMap then
-        self:EnsureMap(a)
+        if tried and tried[a] then return nil end
+        if tried then tried[a] = true end
+        local _, _, transient = self:EnsureMap(a)
         if self:Quest(q) then return true end
-        if not self.mapData[a] then return nil end
+        if not self.mapData[a] then
+            if transient or self.Call(InCombatLockdown) then self.pendingGuideZone = true end
+            return nil
+        end
     end
     return false
 end
@@ -366,7 +407,7 @@ end
 -- Pending: true or false; second value true when the only reason is that Senda Mapas has no data for the quest and it
 -- is not in the log (the addon can never show it: it does not hold a guide back, it is counted as «sin datos»).
 -- key (version 2): an entry marked done by hand is not pending; v2: a quest without data gets a record (synthesize).
-local function pending(self, reader, e, who, key, v2)
+local function pending(self, reader, e, who, key, v2, tried)
     local q = e.q
     if type(q) ~= "number" or not KIND[e.k] then return false end
     if self.saved and self.saved.skipped and self.saved.skipped[q] then return false end
@@ -383,11 +424,18 @@ local function pending(self, reader, e, who, key, v2)
         local a = tonumber(e.a)
         if not (a and self.Index.maps[a]) then return true end
     end
+    local has, checked
     if v2 and not self:Quest(q) then
-        haveData(self, q, e.a)                     -- the module of its zone first: the data of the addon win
-        if not self:Quest(q) then synthesize(self, e) end
+        has, checked = haveData(self, q, e.a, tried), true -- the module of its zone first: the data of the addon win
+        if has == false then
+            synthesize(self, e)
+            has = self:Quest(q) ~= nil
+        end
     end
-    if not reader.active(q) and haveData(self, q, e.a) == false then return false, true end
+    if not reader.active(q) then
+        if not checked then has = haveData(self, q, e.a, tried) end
+        if has == false then return false, true end
+    end
     return true
 end
 
@@ -397,6 +445,10 @@ end
 function ns:GuideWantsQuest(id)
     if type(id) ~= "number" or not self.saved or self:InInstance() then return false end
     if self.saved.skipped and self.saved.skipped[id] then return false end
+    if self.pending and self.Refresh and self.RouteMode and self:RouteMode() and self:GuideActive() then
+        self.pending = nil
+        self:Refresh()
+    end
     local plan = self.routePlan
     if not (plan and plan.guided and type(plan.steps) == "table") then return false end
     local listed = false
@@ -642,9 +694,14 @@ local function collect(self, reader, guide, data, inIds, firstOnly)
     local who, zone = self.context or {}, self.saved.map
     local level = who.level
     -- every zone the guide names: its module compiled first, so «no data» is never a module not compiled yet
+    local tried = {}
     for _, e in ipairs(guide.steps) do
         local a = type(e) == "table" and tonumber(e.a)
-        if a and self.Index.maps[a] and not self.mapData[a] and self.EnsureMap then self:EnsureMap(a) end
+        if a and not tried[a] and self.Index.maps[a] and not self.mapData[a] and self.EnsureMap then
+            tried[a] = true
+            local _, _, transient = self:EnsureMap(a)
+            if not self.mapData[a] and (transient or self.Call(InCombatLockdown)) then self.pendingGuideZone = true end
+        end
     end
     local v2 = isV2(self)
     local letter, guides = self:GuideSet()
@@ -713,7 +770,7 @@ local function collect(self, reader, guide, data, inIds, firstOnly)
             elseif pass and e.k ~= "a" and passedQ[e.q] and not reader.active(e.q) then
                 -- the objectives / hand-in of a quest never taken, passed over: neither pending nor waiting
             else
-                open, missing = pending(self, reader, e, who, key, v2)
+                open, missing = pending(self, reader, e, who, key, v2, tried)
             end
         end
         if missing then
@@ -724,7 +781,11 @@ local function collect(self, reader, guide, data, inIds, firstOnly)
             -- no zone: the zone that owns the data of the quest (an `a` that is not a number is broken: it waits)
             if e.a == nil and quest then
                 a = zoneFor(self, reader, e, quest) or self:QuestZone(q)
-                if a and self.Index.maps[a] and not self.mapData[a] and self.EnsureMap then self:EnsureMap(a) end
+                if a and not tried[a] and self.Index.maps[a] and not self.mapData[a] and self.EnsureMap then
+                    tried[a] = true
+                    local _, _, transient = self:EnsureMap(a)
+                    if not self.mapData[a] and (transient or self.Call(InCombatLockdown)) then self.pendingGuideZone = true end
+                end
             end
             local here, ok, roomless, filtered = a == zone, false, false, false
             -- a zone without coordinates: the position comes from the data of Senda Mapas in that zone
@@ -1033,10 +1094,11 @@ local function firstStep(self, kind, leading)
     local plan = self.routePlan
     if not (plan and plan.guided) then return nil end
     for _, step in ipairs(plan.steps) do
-        if leading and step.kind ~= "paso" then return nil end          -- `leading`: only steps before any quest stop
+        if leading and step.kind ~= "paso" and step.kind ~= "zona" then return nil end -- `leading`: only steps before any quest stop
         for _, id in ipairs(step.quests) do
             local q = type(id) == "number" and id < 0 and self:Quest(id)
             if q and q.gs and q.gs.k == kind then return id, q end
+            if leading and not (type(id) == "number" and id < 0) then return nil end
         end
     end
 end
@@ -1167,16 +1229,18 @@ function ns:GuideTick()
     if not acting(self) then return false end
     local plan = self.routePlan
     if not (plan and plan.guided) or self.Call(UnitOnTaxi, "player") then return false end
-    local id, q = firstStep(self, "note")
+    local id, q = firstStep(self, "note", true)
     if id and near(self, q, NEAR_NOTE, NEAR_NOTE_MAP) then return autoMark(self, id, q) end
     -- «hearth» / «fly» with an area `to`: only when the player is seen ARRIVING there (the zone of the previous tick was
-    -- another one); being in `to` already, a step still far ahead in the guide is never marked
+    -- another one); transient nil zones keep the last known zone, and `leading` prevents marking steps far ahead
     local zone, before = self.currentZone, self.guideTickZone
-    self.guideTickZone = zone
-    if before ~= nil and before ~= zone then
-        for _, kind in ipairs({"hearth", "fly"}) do
-            local sid, sq = firstStep(self, kind)
-            if sid and sq.gs.to and zone == sq.gs.to then return autoMark(self, sid, sq) end
+    if zone ~= nil then
+        self.guideTickZone = zone
+        if before ~= nil and before ~= zone then
+            for _, kind in ipairs({"hearth", "fly"}) do
+                local sid, sq = firstStep(self, kind, true)
+                if sid and sq.gs.to and zone == sq.gs.to then return autoMark(self, sid, sq) end
+            end
         end
     end
     return false
@@ -1209,15 +1273,39 @@ end)
 ns.guideEvents = guideEvents              -- for the tests
 
 -- Step 2, decision 11: the arrow goes to the guide's point of the row (version 2); without one, ns:Navigate as always.
+local function guidePointKey(self, id)
+    local plan = self.routePlan
+    local point = id and plan and plan.guided and plan.pointOf and plan.pointOf[id]
+    local map = point and self:UiMapForZone(point.a)
+    if not map then return nil end
+    return map .. ":" .. point.x .. ":" .. point.y
+end
+
+local plainClearWaypoint = ns.ClearWaypoint
+if plainClearWaypoint then
+    function ns:ClearWaypoint()
+        self.markerGuidePoint = nil
+        return plainClearWaypoint(self)
+    end
+end
+
 local plainNavigate = ns.Navigate
 function ns:Navigate(id, quiet)
     local plan = self.routePlan
     local point = plan and plan.guided and plan.pointOf and plan.pointOf[id]
     local map = point and self:UiMapForZone(point.a)
     local state = map and self:EntryState(id)
-    if not map or state == "done" or (state == "turnin" and self.saved.hideTurnin) then return plainNavigate(self, id, quiet) end
+    if not map or state == "done" or (state == "turnin" and self.saved.hideTurnin) then
+        local ok, noSpot = plainNavigate(self, id, quiet)
+        if ok then self.markerGuidePoint = nil end
+        return ok, noSpot
+    end
     local tomtom = self:Navigator() == "tomtom"
-    if tomtom and (not TomTom or not TomTom.AddWaypoint) then return plainNavigate(self, id, quiet) end
+    if tomtom and (not TomTom or not TomTom.AddWaypoint) then
+        local ok, noSpot = plainNavigate(self, id, quiet)
+        if ok then self.markerGuidePoint = nil end
+        return ok, noSpot
+    end
     local q = self:Quest(id)
     local name = q and q.n or "Ruta guiada"
     local spot = {map = map, x = point.x / 100, y = point.y / 100, name = name}
@@ -1228,15 +1316,36 @@ function ns:Navigate(id, quiet)
         local ok, uid = pcall(TomTom.AddWaypoint, TomTom, map, spot.x, spot.y,
             {title = "Senda Mapas: " .. title, source = "SendaMapas", persistent = false,
              crazy = true, world = true, minimap = true, cleardistance = 0, arrivaldistance = 10})
-        if not (ok and uid) then return plainNavigate(self, id, quiet) end
+        if not (ok and uid) then
+            local ok2, noSpot = plainNavigate(self, id, quiet)
+            if ok2 then self.markerGuidePoint = nil end
+            return ok2, noSpot
+        end
         self.waypoint = uid
     else
         self:SetDestination(spot, title)      -- no list of spots: the nearest-spot pick never moves it
     end
     self.markerQuest, self.markerState = id, state
     self.markerSig = q and select(2, self:UnfinishedObjectives(q))
+    self.markerGuidePoint = map .. ":" .. point.x .. ":" .. point.y
     if not quiet then self:Print("Destino: " .. name .. " (punto de la guía).") end
     return true
+end
+
+local plainUpdateMarkedQuest = ns.UpdateMarkedQuest
+if plainUpdateMarkedQuest then
+    function ns:UpdateMarkedQuest()
+        plainUpdateMarkedQuest(self)
+        local id = self.markerQuest
+        if not id then self.markerGuidePoint = nil; return end
+        local key = guidePointKey(self, id)
+        if key ~= self.markerGuidePoint then
+            self:Navigate(id, true)
+            -- tried for this point, whichever way it went (the plain fallback leaves no guided point): not again at
+            -- every refresh while the point stays the same
+            if self.markerQuest == id then self.markerGuidePoint = key else self.markerGuidePoint = nil end
+        end
+    end
 end
 
 -- Step 3 (§2.3): tips of the current guided plan for a row (cleaned, capped at TIPS_MAX x TEXT_MAX) and tooltip
@@ -1283,25 +1392,19 @@ function ns:GuideOrphans()
     if not (self:GuideActive() and isV2(self)) then return {} end
     local letter, guides = self:GuideSet()
     local who = self.context or {}
-    local chain = Guide.Chain(guides, who.race)
     local fixed = self.saved and self.saved.guideName
-    local extra
-    if type(fixed) == "string" then
-        local inChain = false
-        for _, g in ipairs(chain) do if g.name == fixed then inChain = true; break end end
-        if not inChain then
-            for _, g in ipairs(guides or {}) do if type(g) == "table" and g.name == fixed then extra = g; break end end
-        end
-    end
-    if #chain == 0 and not extra then return {} end
     local logIds = {}
     for id in pairs(self.log or {}) do if type(id) == "number" then logIds[#logIds + 1] = id end end
     if #logIds == 0 then return {} end
     table.sort(logIds)
-    local logMarks = {}                -- id plus «c» when the log says it is complete: a quest turning ready changes the signature
+    local skipped = self.saved and self.saved.skipped
+    local readyFn = self.context and self.context.ready
+    local logMarks = {}                -- id plus «c» when ready and «s» when skipped: either changes the signature
     for index, id in ipairs(logIds) do
         local entry = self.log[id]
-        logMarks[index] = id .. ((type(entry) == "table" and entry.complete) and "c" or "")
+        local doneLog = (type(entry) == "table" and entry.complete == 1) or (readyFn and readyFn(id))
+        local skipLog = skipped and skipped[id]
+        logMarks[index] = id .. (doneLog and "c" or "") .. (skipLog and "s" or "")
     end
     local sig = table.concat({
         tostring(self.LocalRoutes), letter, tostring(who.race), tostring(who.class),
@@ -1310,11 +1413,23 @@ function ns:GuideOrphans()
     }, "|")
     local cache = self.guideOrphanCache
     if cache and cache.sig == sig then return cache.ids end
+    local chain = Guide.Chain(guides, who.race)
+    local extra
+    if type(fixed) == "string" then
+        local inChain = false
+        for _, g in ipairs(chain) do if g.name == fixed then inChain = true; break end end
+        if not inChain then
+            for _, g in ipairs(guides or {}) do if type(g) == "table" and g.name == fixed then extra = g; break end end
+        end
+    end
+    if #chain == 0 and not extra then
+        self.guideOrphanCache = {sig = sig, ids = {}}
+        return self.guideOrphanCache.ids
+    end
     local inLog, used = {}, {}
     for _, id in ipairs(logIds) do inLog[id] = true end
     local reader = newReader(self)
     local done = doneSet(self)
-    local skipped = self.saved and self.saved.skipped
     local function scanGuide(g)
         for index, e in ipairs(type(g.steps) == "table" and g.steps or {}) do
             local q = type(e) == "table" and e.q
@@ -1424,6 +1539,7 @@ function ns:SetGuideSet(letter, quiet)
         self.saved.guideSet = letter
         self.saved.guideName = nil
         self.routeCache = nil
+        chainCache.guides, chainCache.key, chainCache.chain = nil, nil, nil
     end
     if not quiet then self:Print("Ruta guiada: guía " .. letter .. " en uso.") end
     self:Refresh()

@@ -50,16 +50,30 @@ end
 -- a module is compiled only when one of its maps is chosen, then its source string is freed.
 local compile = loadstring or load
 
+-- A module whose data failed (unreadable, errored, or did not fit) is not compiled and run again on every attempt (every
+-- zone change, every refresh of the guide) while its source string is the same one: the first answer is kept, with the
+-- source it belongs to. A different source (or none) is judged again.
+local moduleFailed = {}
+ns.moduleFailed = moduleFailed          -- for the tests
+
+local function failed(name, source, reason)
+    moduleFailed[name] = {source = source, reason = reason}
+    return false, reason
+end
+
 function ns:LoadModule(name)
     if self.loadedModules[name] then return true end
     local source = self.moduleSource and self.moduleSource[name]
     if not source then return false, "faltan los datos del módulo " .. name .. " en la carpeta del addon" end
+    local known = moduleFailed[name]
+    if known and known.source == source then return false, known.reason end
     if not compile then return false, "el cliente no permite compilar los datos" end
     local chunk, err = compile(source, "=" .. name)
-    if not chunk then return false, "datos ilegibles (" .. tostring(err) .. ")" end
+    if not chunk then return failed(name, source, "datos ilegibles (" .. tostring(err) .. ")") end
     local ok, maps = pcall(chunk)
-    if not ok then return false, "error de carga (" .. tostring(maps) .. ")" end
-    if not self:RegisterModule(name, self.Index.version, maps) then return false, "datos incompatibles" end
+    if not ok then return failed(name, source, "error de carga (" .. tostring(maps) .. ")") end
+    if not self:RegisterModule(name, self.Index.version, maps) then return failed(name, source, "datos incompatibles") end
+    moduleFailed[name] = nil
     self.moduleSource[name] = nil
     return true
 end
@@ -68,7 +82,7 @@ function ns:EnsureMap(zoneId)
     if self.mapData[zoneId] then return self.mapData[zoneId] end
     local info = self.Index.maps[zoneId]
     if not info then return nil, "Ese mapa no tiene módulo de misiones." end
-    if self.Call(InCombatLockdown) then return nil, "Cambia de mapa al salir de combate." end
+    if self.Call(InCombatLockdown) then return nil, "Cambia de mapa al salir de combate.", true end   -- third value: transient, not an issue
     local ok, loaded, reason = pcall(self.LoadModule, self, info.mod)
     if not ok or not loaded or not self.mapData[zoneId] then
         return nil, "No se pudo cargar " .. info.mod .. ": " ..
@@ -95,9 +109,9 @@ function ns:LoadMap(zoneId, quiet, silent)
         if not silent then self:Print("Elige un mapa válido en el selector.") end
         return false
     end
-    local data, reason = self:EnsureMap(zoneId)
+    local data, reason, transient = self:EnsureMap(zoneId)
     if not data then
-        if self.ReportIssue then self:ReportIssue("LoadMap " .. tostring(zoneId), reason) end
+        if self.ReportIssue and not transient then self:ReportIssue("LoadMap " .. tostring(zoneId), reason) end
         if not self.activeData then self.moduleError = reason end
         if not silent and (not quiet or not self.activeData) then self:Print(reason) end
         if self.Render then self:Render() end

@@ -169,7 +169,7 @@ function ns:ReadLog()
             local ok, title, level, _, header, _, complete, _, id = pcall(GetQuestLogTitle, index)
             id = ok and ns.Plain(id) or nil
             title, level = ok and ns.Plain(title) or nil, ok and ns.Plain(level) or nil
-            if id and not ns.Plain(header) then
+            if type(id) == "number" and id > 0 and not ns.Plain(header) then      -- a header answers 0, as above
                 self.log[id] = {index = index, complete = ns.Plain(complete), level = type(level) == "number" and level or nil,
                     title = type(title) == "string" and title ~= "" and title or nil}
             end
@@ -219,6 +219,7 @@ local function freshCache(context) return {context = context, states = {}, compl
 function ns:InvalidateStates()
     if self.stateCache then self.stateCache = freshCache(self.context) end
     self.levelShowCache = nil          -- phase 17 (review M2): the level range of the marks depends on the states too
+    self.guideOrphanCache = nil        -- the quests of the log out of the guide (Guia.lua) depend on the states too
 end
 
 local function endPass(self, ok, ...)
@@ -469,6 +470,7 @@ function ns:FullRefresh(quiet)
 end
 
 local function refresh(self)
+    self.refreshSerial = (self.refreshSerial or 0) + 1      -- a queued refresh asked before this one is not needed (QueueRefresh)
     self:ReadLog()
     self.context = self:Context()
     self.levelShowCache = nil          -- phase 17: the level range of the marks is judged again (Navigation.lua)
@@ -485,6 +487,18 @@ local function refresh(self)
     if self.BuildRoute and self:RouteMode() then
         local ok, plan = pcall(self.BuildRoute, self, ids)
         if ok then self.routePlan = plan elseif self.ReportIssue then self:ReportIssue("Ruta", plan) end
+    else
+        self.guideRecords, self.guideRecordsFor = nil, nil     -- out of the order «Ruta» the records of the guide go (Guia.lua)
+    end
+    -- A chosen id that is neither a quest of the loaded map nor a row of the plan of now (a step of the guided route left
+    -- behind by another order, the guide off or a dungeon map; a quest of a stop in another zone) is dropped.
+    if self.selected and self.activeData then
+        local inPlan = self.routePlan and self.routePlan.stepOf and self.routePlan.stepOf[self.selected]
+        local entry = self.questIndex and self.questIndex[self.selected]       -- data of a module, never a record of the guide
+        -- a quest listed in two maps is indexed under the last one loaded: the loaded map's own table counts too
+        local inMap = (entry and entry.zone == self.saved.map)
+            or (type(self.activeData.byId) == "table" and self.activeData.byId[self.selected] ~= nil)
+        if not inPlan and not inMap then self.selected = nil end
     end
     -- Phase 17 (review H1): a chosen quest that the level range now hides is dropped (and its mark, as SetHideTurnin
     -- does), so the next visible one is chosen. A quest in the log, to hand in or the next step of a chain never hides.
@@ -500,7 +514,7 @@ local function refresh(self)
         if self.markerQuest == self.selected and self.ClearWaypoint then self:ClearWaypoint() end
         self.selected = nil
     end
-    if self.selected and self.context.completed(self.selected) then self.selected = nil end
+    if type(self.selected) == "number" and self.selected > 0 and self.context.completed(self.selected) then self.selected = nil end
     if self.selected and self.saved.hideTurnin and self:EntryState(self.selected) == "turnin" then self.selected = nil end
     -- Order «Ruta»: the chosen quest is the first one of the first stop (or the one kept by hand, ns:RouteHold).
     if self.routePlan then self.selected = self:RouteSelected() or self.selected end
@@ -524,12 +538,24 @@ function ns:Refresh()
     self:CachedStates(refresh, self)
 end
 
+-- The last request remembers the refresh count of then: when a refresh ran after it (a button, LoadMap, Guia.lua
+-- GuideWantsQuest, which also clears ns.pending), the timer does nothing. Only the newest timer acts: one left behind
+-- when ns.pending was cleared and a new request came is a no-op.
 function ns:QueueRefresh()
+    self.refreshWanted = self.refreshSerial or 0
     if self.pending then return end
     self.pending = true
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0.3, function() ns.pending = nil; ns:Refresh() end)
-    else self.pending = nil; self:Refresh() end
+    if not (C_Timer and C_Timer.After) then self.pending = nil; self:Refresh(); return end
+    local token = {}
+    self.refreshToken = token
+    C_Timer.After(0.3, function()
+        if ns.refreshToken ~= token then return end     -- a newer timer serves the requests
+        ns.refreshToken = nil
+        if not ns.pending then return end               -- taken over: a refresh already cleared it
+        ns.pending = nil
+        if (ns.refreshSerial or 0) ~= ns.refreshWanted then return end
+        ns:Refresh()
+    end)
 end
 
 function ns:SelectQuest(id)
@@ -561,6 +587,19 @@ function ns:Skip(id, quiet)
     id = id or self.selected
     if not id then
         if not quiet then self:Print("No hay ninguna misión seleccionada para saltar.") end
+        return
+    end
+    -- A step of the guided route that is not a quest (negative id, Guia.lua) is marked done, never skipped: saved.skipped
+    -- stays clean (the same as the right click of its row, HUD.lua).
+    if type(id) == "number" and id < 0 then
+        local plan = self.routePlan
+        local key = plan and plan.guided and plan.entryOf and plan.entryOf[id]
+        if key and self.GuideMark then
+            local q = self:Quest(id)
+            self:GuideMark(key, q and q.n or tostring(id), true, quiet)
+        elseif not quiet then
+            self:Print("Este paso de la guía no es una misión: no se puede saltar.")
+        end
         return
     end
     local follow = self.markerQuest == id
@@ -834,14 +873,25 @@ function ns:Migrate()
     if count > EXPANDED_MAX then saved.expanded = {} end
     local confirmed
     local ids = self.Call(C_QuestLog and C_QuestLog.GetAllCompletedQuestIDs)
+    -- every id through ns.Plain and a number check, as LoadCompleted does: a secret one is not a table key (Initialize
+    -- runs this outside any pcall)
     if type(ids) == "table" and #ids > 0 then
         confirmed = {}
-        for _, id in ipairs(ids) do confirmed[id] = true end
+        for _, id in ipairs(ids) do
+            id = ns.Plain(id)
+            if type(id) == "number" then confirmed[id] = true end
+        end
     else
         local legacy = self.Call(GetQuestsCompleted)
-        if type(legacy) == "table" and next(legacy) ~= nil then confirmed = legacy end
+        if type(legacy) == "table" and next(legacy) ~= nil then
+            confirmed = {}
+            for id, done in pairs(legacy) do
+                id = ns.Plain(id)
+                if type(id) == "number" and ns.Plain(done) then confirmed[id] = true end
+            end
+        end
     end
-    if confirmed then
+    if confirmed and next(confirmed) ~= nil then
         for id in pairs(saved.turnedIn) do if confirmed[id] then saved.turnedIn[id] = nil end end
     end
     if saved.turninNotice == "both" then saved.turninNotice = "panel" end     -- the chat mode of the notices is gone
@@ -1021,6 +1071,8 @@ events:SetScript("OnEvent", function(_, event, name)
         ns:QueueRefresh()
     elseif event == "PLAYER_REGEN_ENABLED" then
         if ns.pendingZone then ns.pendingZone = nil; ns.manualZone = nil; ns:CheckZone() end
+        -- a zone of the guided route not compiled in combat (Guia.lua): the plan is built again with it now
+        if ns.pendingGuideZone then ns.pendingGuideZone = nil; ns.routeCache = nil; ns:QueueRefresh() end
         -- phase 18: «Actualizar» pressed in combat with the module of the zone not loaded (CheckZone alone would not
         -- jump with auto-follow off)
         if ns.pendingUpdate then ns.pendingUpdate = nil; ns:UpdateProgress(true) end

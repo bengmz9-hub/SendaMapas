@@ -87,6 +87,8 @@ local function targetWorld(dest)
     end
     return dest._wc, dest._wa, dest._wb
 end
+-- The route with transport and BestSpot (Navigation.lua) measure their fixed points with the same memory.
+ns.TargetWorld = targetWorld
 
 -- The player's map, map position and world position, measured once and shared by several destinations
 -- (`shared` is a table the caller empties before each measurement).
@@ -129,7 +131,7 @@ function ns:ArrowVector(dest, shared)
     local width, height
     if C_Map.GetMapWorldSize then
         local okSize, w, h = pcall(C_Map.GetMapWorldSize, map)
-        if okSize then width, height = w, h end
+        if okSize then width, height = ns.Plain(w), ns.Plain(h) end      -- compared below: never a secret value
     end
     local dx, dy = dest.x - px, dest.y - py
     if type(width) == "number" and type(height) == "number" and width > 0 and height > 0 then
@@ -463,15 +465,22 @@ end
 
 -- With several candidate spots (objectives), aim at the nearest one the arrow can measure.
 local spotShared = {}          -- the player's position, measured once for all the candidate spots
+local SPOT_MARGIN, SPOT_MARGIN_SHARE = 15, 0.1
 function ns:PickNearestSpot()
     local dest = self.dest
     if not dest or not dest.spots or #dest.spots < 2 then return end
-    local best, bestDistance
+    local best, bestDistance, current
     spotShared.done = nil
     for _, spot in ipairs(dest.spots) do
         local _, distance = self:ArrowVector(spot, spotShared)
-        if type(distance) == "number" and (not bestDistance or distance < bestDistance) then best, bestDistance = spot, distance end
+        if type(distance) == "number" then
+            if not bestDistance or distance < bestDistance then best, bestDistance = spot, distance end
+            if spot.map == dest.map and spot.x == dest.x and spot.y == dest.y then current = distance end
+        end
     end
+    -- Hysteresis (owner's decision): the spot in use is kept unless another one is clearly nearer, max(15 yards, 10 %),
+    -- so the arrow, the ETA and the route do not jump between two spots at about the same distance.
+    if best and current and bestDistance > current - math.max(SPOT_MARGIN, current * SPOT_MARGIN_SHARE) then best = nil end
     if best and (best.map ~= dest.map or best.x ~= dest.x or best.y ~= dest.y) then
         dest.map, dest.x, dest.y = best.map, best.x, best.y
         self.minimapDirty = true      -- the minimap star copies dest.x / dest.y when its targets are collected

@@ -214,9 +214,11 @@ function ns:LiveObjectives(id)
     local out = {}
     for _, objective in ipairs(live) do
         -- every field through ns.Plain: a secret text is "Objetivo", a secret count is no count
-        local line = type(objective) == "table" and ns.Plain(objective.text)
+        local isTable = type(objective) == "table"         -- anything else is an objective without text nor count
+        local line = isTable and ns.Plain(objective.text)
         if type(line) ~= "string" then line = "Objetivo" end
-        local have, need = ns.Plain(objective.numFulfilled), ns.Plain(objective.numRequired)
+        local have, need
+        if isTable then have, need = ns.Plain(objective.numFulfilled), ns.Plain(objective.numRequired) end
         if type(have) == "number" and type(need) == "number" and need > 0 and not line:match("%d+%s*/%s*%d+") then
             line = line .. " " .. have .. "/" .. need
         end
@@ -225,7 +227,7 @@ function ns:LiveObjectives(id)
         if not (type(have) == "number" and type(need) == "number") and textHave then
             have, need = tonumber(textHave), tonumber(textNeed)
         end
-        out[#out+1] = {text = line, label = label or line, have = have, need = need, finished = ns.Plain(objective.finished) and true or false}
+        out[#out+1] = {text = line, label = label or line, have = have, need = need, finished = isTable and ns.Plain(objective.finished) and true or false}
     end
     return out
 end
@@ -248,7 +250,11 @@ function ns:QuestSummaryLines(id)
             for _, text in ipairs(q.o or {}) do lines[#lines+1] = "|cffffffff" .. text .. "|r" end
         end
         if state == "turnin" then
-            local npc = q.e and q.e[1] and q.e[1].n
+            -- the hand-in line is never the one cut (3 objectives at most then; RenderHUDBody keeps item.objectives in
+            -- step), with the NPC's name in the client's language as everywhere else (Navigation.lua NpcName)
+            while #lines > MAX_SUMMARY_LINES - 1 do table.remove(lines) end
+            local giver = q.e and q.e[1]
+            local npc = giver and ((giver.k == "n" and giver.i and self.NpcName and self:NpcName(giver.i, giver.n)) or giver.n)
             lines[#lines+1] = "|cffe6c98aTerminada: entrégala" .. (npc and (" a " .. npc) or "") .. ".|r"
         end
     elseif state == "done" then
@@ -282,8 +288,8 @@ function ns:ClickQuest(id)
     local wasOpen = self.saved.expanded[id]
     self.saved.expanded = {}
     if not wasOpen then self.saved.expanded[id] = true end
-    self:SelectQuest(id)
-    if self.selected == id then self:RenderHUD() end
+    self:SelectQuest(id)          -- renders (ns:Render); a second render here would build the panel twice
+    if not self.Render and self.selected == id then self:RenderHUD() end
 end
 
 
@@ -413,6 +419,7 @@ function ns:CreateUI()
         if ns.RenderNotice then ns:RenderNotice() end     -- review M2: the notice goes to the top of the screen
     end)
     f:SetScript("OnShow", function()
+        if ns.hudDirty then ns.hudDirty = nil; ns:RenderHUD() end      -- what changed while it was hidden (RenderHUD)
         if ns.RenderNotice then ns:RenderNotice() end     -- review M2: and back over the panel
     end)
     if f.SetBackdrop then
@@ -684,6 +691,9 @@ end
 -- "rendering" flag is always cleared; the error goes to the addon's own log.
 function ns:RenderHUD()
     if not self.frame or not self.context or self.rendering then return end
+    -- panel hidden: nothing is built now; one render when it is shown again (OnShow)
+    if not self.frame:IsShown() then self.hudDirty = true; return end
+    self.hudDirty = nil
     self.rendering = true
     local ok, err = pcall(self.RenderHUDBody, self)
     self.rendering = nil
@@ -771,6 +781,12 @@ function ns:RenderHUDBody()
             item.instruction = meta == "" and action or (meta .. " · " .. action)
             item.lines = (self.saved.openAll or self.saved.expanded[id]) and self:QuestSummaryLines(id) or nil
             item.objectives = (not stepWord and (state == "active" or state == "turnin")) and self:LiveObjectives(id) or nil
+            -- a finished quest shows 3 objectives and its hand-in line (QuestSummaryLines): the 4th line is not an objective
+            if state == "turnin" and item.lines and item.objectives and #item.objectives >= MAX_SUMMARY_LINES then
+                local kept = {}
+                for position = 1, MAX_SUMMARY_LINES - 1 do kept[position] = item.objectives[position] end
+                item.objectives = kept
+            end
             -- phase 14b: the labels the row draws (QuestBadge decides which) and the locked look
             local badge = q and self.QuestBadge and self:QuestBadge(q)
             item.badges = badge and badge.chips or {}
@@ -839,6 +855,10 @@ function ns:RenderHUDBody()
         if stepRows and items[#items].current then table.remove(items, (items[1].stop and #items > 2) and 2 or 1)
         else table.remove(items) end
     end
+    -- the rail of the last row kept: the tail drawn by a row that was dropped goes (Rows_rail.lua)
+    local lastRow = items[#items] and items[#items].row
+    local tail = lastRow and lastRow.pieces and lastRow.pieces["t:ARTWORK:railTail"]
+    if tail then tail:Hide() end
     local bottom = layout()
     if not self.resizing then self.frame:SetHeight(height or math.max(172, bottom + 42)) end
     -- «Devolver»: the count of skipped quests; dimmed and disabled with none
@@ -861,7 +881,8 @@ function ns:RenderHUDBody()
     self.hudList:SetEnabled(self.saved.hudMode ~= "list")
     self.hudLess:SetEnabled(self.saved.visibleCount > 1)
     self.hudMore:SetEnabled(self.saved.visibleCount < cap)
-    self:RenderFilterOptions()
+    -- the options window repaints itself when it is shown (SetOptionsSection), so only an open one is repainted here
+    if self.hudSettings and self.hudSettings:IsShown() then self:RenderFilterOptions() end
     local used = {}
     for index, item in ipairs(items) do
         local row = item.row

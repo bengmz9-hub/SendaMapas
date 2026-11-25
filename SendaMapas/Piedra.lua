@@ -108,12 +108,28 @@ local function candidatesStatus(found)
     return "known"
 end
 
+-- bindMemo: text -> normalized key (the four gsubs once per text); key -> found/status for a place that was recognised;
+-- unknownKey/unknownAt: a text no place matched is not scanned again for UNKNOWN_RETRY seconds (the area names may arrive
+-- late), until HEARTHSTONE_BOUND, or until a different text.
+local UNKNOWN_RETRY = 30
 local bindMemo = {}
+local NO_PLACES = {}
 function ns:BoundInns()
     local text = self:BindText()
-    local key = normalize(text)
+    local key
+    if text ~= nil and bindMemo.text == text then key = bindMemo.textKey
+    else
+        key = normalize(text)
+        bindMemo.text, bindMemo.textKey = text, key
+    end
     if not key then return {}, "unknown", text end
     if bindMemo.key == key then return bindMemo.found, bindMemo.status, text end
+    if bindMemo.unknownKey == key then
+        local now = self.Call(GetTime)
+        if type(now) == "number" and type(bindMemo.unknownAt) == "number" and now - bindMemo.unknownAt < UNKNOWN_RETRY then
+            return NO_PLACES, "unknown", text
+        end
+    end
     local entries = {}
     for _, inn in ipairs(inns()) do entries[#entries + 1] = inn end
     for _, place in ipairs(starters()) do entries[#entries + 1] = place end
@@ -136,7 +152,8 @@ function ns:BoundInns()
         end
     end
     local status = candidatesStatus(found)
-    if status ~= "unknown" then bindMemo.key, bindMemo.found, bindMemo.status = key, found, status end    -- «unknown» is tried again
+    if status ~= "unknown" then bindMemo.key, bindMemo.found, bindMemo.status = key, found, status    -- «unknown» is tried again, later
+    else bindMemo.unknownKey, bindMemo.unknownAt = key, self.Call(GetTime) end
     return found, status, text
 end
 
@@ -216,13 +233,16 @@ function ns:CheckHearthNotice()
     local zone = self.currentZone
     if not zone or zone ~= self.saved.map or not self.activeData then return false end
     local inn = self:CurrentInn()
-    if not inn or notified[inn.i] or self:HearthBlocked() then return false end
+    if not inn or notified[inn.i] then return false end
+    -- the cheap conditions first (this runs at the end of every Refresh): the minute between notices, the bound place, and
+    -- only then what costs more (the checks of combat and transport, the quests of the map)
+    local now = self.Call(GetTime) or 0
+    if lastNotice and now - lastNotice < NOTICE_GAP then return false end
     local bound, status = self:BoundInns()
     if status == "unknown" then return false end
     for _, entry in ipairs(bound) do if entry.z == zone then return false end end
+    if self:HearthBlocked() then return false end
     if self:HearthQuestCount() < MIN_QUESTS then return false end
-    local now = self.Call(GetTime) or 0
-    if lastNotice and now - lastNotice < NOTICE_GAP then return false end
     notified[inn.i], lastNotice = true, now
     local place = self:PlaceName(inn)
     local npc = (self.NpcName and self:NpcName(inn.i, inn.n)) or inn.n
@@ -307,7 +327,7 @@ function ns:ResetHearthSession()      -- tests
     for key in pairs(notified) do notified[key] = nil end
     for key in pairs(useNotified) do useNotified[key] = nil end
     lastNotice, lastUse, lastBind = nil, nil, nil
-    bindMemo.key = nil
+    bindMemo.key, bindMemo.text, bindMemo.textKey, bindMemo.unknownKey, bindMemo.unknownAt = nil, nil, nil, nil, nil
     for key in pairs(areaNames) do areaNames[key] = nil end
 end
 
@@ -359,7 +379,7 @@ end
 local events = CreateFrame("Frame")
 pcall(events.RegisterEvent, events, "HEARTHSTONE_BOUND")
 events:SetScript("OnEvent", function()
-    bindMemo.key = nil
+    bindMemo.key, bindMemo.unknownKey, bindMemo.unknownAt = nil, nil, nil
     -- review P2: the leg and the saving were of the old inn: the route is worked out again and its notice goes
     ns.route = nil
     if ns.HideNotice then ns:HideNotice("hearth"); ns:HideNotice("hearth_use") end

@@ -62,7 +62,8 @@ function ns:NpcName(id, fallback)
         npcPending[id] = true
         C_Timer.After(0.5, function()
             npcPending[id] = nil
-            if npcNames[id] then return end
+            -- Inside an instance by now (entered within the 0.5 s): no tooltip is read there and the try is kept for later.
+            if npcNames[id] or ns:InInstance() then return end
             npcTries[id] = 2
             npcNames[id] = scanName(id)
         end)
@@ -628,12 +629,16 @@ function ns:BestSpot(spots)
         if ok then a, b = ns.PointXY(vector) end
         if a then return ns.Plain(continent), a, b end
     end
+    -- The arrow's own measures when loaded (Arrow.lua): one reused vector for the player, the spot's world position
+    -- remembered on the spot (the order «cercania» asks it for every quest at every refresh).
+    local playerWorld, spotWorld = self.WorldPoint or world, self.TargetWorld
     local pc, wx, wy
-    if px then pc, wx, wy = world(map, px, py) end
+    if px then pc, wx, wy = playerWorld(map, px, py) end
     local best, bestScore
     for _, spot in ipairs(spots) do
         local score = 1e15
-        local tc, tx, ty = world(spot.map, spot.x, spot.y)
+        local tc, tx, ty
+        if spotWorld then tc, tx, ty = spotWorld(spot) else tc, tx, ty = world(spot.map, spot.x, spot.y) end
         if pc and tc == pc then score = (tx-wx)^2 + (ty-wy)^2
         elseif px and spot.map == map then score = (spot.x-px)^2 + (spot.y-py)^2 end
         if not bestScore or score < bestScore then best, bestScore = spot, score end
@@ -856,15 +861,24 @@ end
 -- Yards between two {map, x, y} points, or nil when the client cannot measure them on one continent. On one map
 -- without world coordinates (finding 7: custom zones), the map's own size is used when the client gives it.
 function ns:TransportDistance(a, b)
-    local world = self.WorldPoint
+    local world, cached = self.WorldPoint, self.TargetWorld
     if not (a and b) then return nil end
-    if world then
-        local ca, xa, ya = world(a.map, a.x, a.y)
-        local cb, xb, yb = world(b.map, b.x, b.y)
+    if cached or world then
+        -- The transport points do not move: their world position is remembered on them (Arrow.lua targetWorld, renewed
+        -- by ResetArrowCache), so a route asks the client once per point instead of once per comparison.
+        local ca, xa, ya, cb, xb, yb
+        if cached then
+            ca, xa, ya = cached(a)
+            cb, xb, yb = cached(b)
+        else
+            ca, xa, ya = world(a.map, a.x, a.y)
+            cb, xb, yb = world(b.map, b.x, b.y)
+        end
         if ca ~= nil and cb ~= nil and ca == cb then return math.sqrt((xa - xb) ^ 2 + (ya - yb) ^ 2) end
     end
     if a.map == b.map and C_Map and C_Map.GetMapWorldSize then
         local ok, width, height = pcall(C_Map.GetMapWorldSize, a.map)
+        if ok then width, height = ns.Plain(width), ns.Plain(height) end      -- compared below: never a secret value
         if ok and type(width) == "number" and type(height) == "number" and width > 0 and height > 0 then
             return math.sqrt(((a.x - b.x) * width) ^ 2 + ((a.y - b.y) * height) ^ 2)
         end
@@ -1173,6 +1187,9 @@ local gearGen, gearRetries, gearTimer, gearPending = 0, 0, false, false
 local GEAR_RETRY_DELAY, GEAR_MAX_RETRIES = 2, 5
 local chainCache = {}
 ns.gearState = {cache = chainCache}       -- for the tests
+-- Ids of the chain items still loading: GET_ITEM_INFO_RECEIVED of any other item of the game is not ours.
+local requestedItems = {}
+ns.gearState.requested = requestedItems
 
 local function playerClass() return ns:PlayerIdentity().class end      -- remembered inside instances (Core.lua)
 
@@ -1281,6 +1298,7 @@ end
 local function judgeItem(self, item, code, class, role, level)
     local name, link, quality, _, reqLevel, _, _, _, equipLoc, _, _, classID, subClassID = self:ItemInfo(item)   -- Core.lua
     if not name then
+        requestedItems[item] = true
         if type(C_Item) == "table" then self.Call(C_Item.RequestLoadItemDataByID, item) end
         return "pending"
     end
@@ -1408,6 +1426,7 @@ end
 local function appraiseItem(self, item, code, class, role, level)
     local name, link, quality, _, reqLevel, _, _, _, equipLoc, _, price, classID, subClassID = self:ItemInfo(item)   -- Core.lua
     if not name then
+        requestedItems[item] = true
         if type(C_Item) == "table" then self.Call(C_Item.RequestLoadItemDataByID, item) end
         return "pending"
     end
@@ -1858,11 +1877,20 @@ local gearEvents = CreateFrame("Frame")
 for _, event in ipairs({"GET_ITEM_INFO_RECEIVED", "PLAYER_LEVEL_UP", "UPDATE_SHAPESHIFT_FORM", "CHARACTER_POINTS_CHANGED"}) do
     pcall(gearEvents.RegisterEvent, gearEvents, event)
 end
-gearEvents:SetScript("OnEvent", function(_, event)
+gearEvents:SetScript("OnEvent", function(_, event, arg1)
     if not ns.saved then return end
     if event == "GET_ITEM_INFO_RECEIVED" then
-        if not gearPending then return end
+        -- Only an item of a chain that is still loading (no id given: taken as ours, as before).
+        local id = ns.Plain(arg1)
+        if not gearPending or (id ~= nil and not requestedItems[id]) then return end
+        if id ~= nil then requestedItems[id] = nil end
         gearPending = false
+    elseif event == "UPDATE_SHAPESHIFT_FORM" then
+        -- The form only decides the automatic role of a druid (detectRole); inside an instance it is not read. Stances,
+        -- stealth or a form that keeps the role: no refresh.
+        local chosen = ns.saved.gearRole
+        if playerClass() ~= "DRUID" or (chosen and chosen ~= "auto") or ns:InInstance() then return end
+        if ns.gearRoleDetected ~= nil and detectRole(ns, "DRUID") == ns.gearRoleDetected then return end
     end
     gearGen = gearGen + 1
     if event ~= "GET_ITEM_INFO_RECEIVED" then gearRetries = 0 end

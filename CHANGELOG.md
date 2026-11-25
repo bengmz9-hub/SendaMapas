@@ -1,11 +1,29 @@
 # Historial de cambios
 
-## 0.6.9-alpha (2026-11-24)
+## 0.7.0 (2026-11-25)
 
-Estado: alpha; las correcciones de la revisión del código aún sin ver en el juego. Validación en Lua 5.1 con dobles: pasan `223 + 14` comprobaciones.
+Estado: alpha; los cambios de fluidez y robustez de esta versión aún sin ver en el juego. Validación en Lua 5.1 con dobles: pasan `265 + 14` comprobaciones.
 
-### Ruta guiada
-- **Revisión del código (ruta guiada, flecha y minimapa)** (2026-11-24; `Guia.lua`, `Arrow.lua`, `MinimapPins.lua`, `MapPins.lua`): la piedra por hechizo solo marca un paso que toca (antes de cualquier parada de misión); las misiones superadas por «ponerse al día» ya no inflan «en espera» con sus objetivos y entrega; las marcas hechas a mano se podan si el paso ya no está en su sitio al cambiar la guía; el tooltip de una fila de misión de la guía dice «Mayús+clic: marcar este paso»; la caché de misiones sobrantes nota que una misión pasa a estar lista; `/smapas guia` avisa si la guía fijada no tiene nada que hacer; `reader.active` recuerda su respuesta; la flecha mide al jugador una sola vez por cada punto candidato y avisa al minimapa cuando cambia de punto, que ahora se reconstruye como respaldo cada 5 s en vez de cada 1,5 s; los valores de radio, zoom y mapa del cliente pasan por `ns.Plain`.
+### Fluidez
+- **Minimapa** (`MinimapPins.lua`): las marcas ya no se recolocan en cada fotograma si nada cambió (sin giro del minimapa, solo al medir cada 0,1 s; con giro, solo cuando cambia el rumbo) y se paran con el minimapa oculto.
+- **Panel** (`HUD.lua`, `Core.lua`): no se construye mientras está oculto (un solo pintado al mostrarlo); un clic en una misión lo pinta una vez en vez de dos; la ventana de Opciones solo se repinta si está abierta; las peticiones de refresco que ya atendió otro refresco no se repiten.
+- **Mapa del mundo** (`MapPins.lua`): la línea de ruta no trabaja con el mapa cerrado ni se redibuja si nada cambió; el zoom con la rueda lanza un solo refresco; las marcas reutilizan la lectura del registro del refresco en curso.
+- **Ruta con transporte y orden «Cercanía»** (`Navigation.lua`, `Arrow.lua`): la posición mundial de los puntos fijos se recuerda en vez de pedirse en cada comparación.
+- **Ruta guiada** (`Guia.lua`, `Ruta.lua`): las condiciones de clase y raza de los pasos y la cadena de guías se calculan una vez; el planificador sin guía deja el trabajo de puntos y objetivos para cuando el plan cambia de verdad.
+- **Equipo de las cadenas** (`Navigation.lua`): cambiar de actitud, sigilo o forma sin cambio de rol, o cargar objetos que no son de una cadena, ya no refresca el panel.
+- **Selector de mapas** (`UI.lua`, `Aspecto.lua`): cada nombre de mapa se pide una vez por pintado y no se pinta al cerrarlo ni estando oculto.
+- **Piedra de hogar y filtros** (`Piedra.lua`, `Filters.lua`, `Modules.lua`): las comprobaciones baratas van primero; un texto de piedra sin sitio conocido se reintenta cada 30 s y no en cada refresco; un módulo de datos que falla no se vuelve a compilar con el mismo contenido.
 
-### Panel y opciones
-- **Revisión del código (núcleo, piedra, avisos y opciones)** (`Core.lua`, `Modules.lua`, `Piedra.lua`, `AutoTurnin.lua`, `Options.lua`, `Errores.lua`): una misión saltada (o abandonada desde una ventana) deja de ser la elegida y suelta su marca; el nombre de zona que falla una vez se vuelve a pedir y la piedra sin sitio conocido no se recuerda como «desconocida»; la entrega automática comprueba también el id; «avisos no» quita además los avisos de marcas y de misiones sobrantes de la guía; una ventana de texto reutilizada no la toca una cola de abandono anterior y su botón vuelve a estar activo; al importar ajustes se limpian el orden de ruta y el sonido como al cambiarlos uno a uno y no se coloca una posición sin números; un clic en una fila pide una sola vez el estado de cada misión; un mapa ya compilado cambia aunque estés en combate; los reintentos de arranque paran en zonas sin misiones y una entrada nueva suelta los anteriores; los ids del registro y de misiones completadas se validan, y el registro de errores no lee valores protegidos.
+### Robustez
+- **Arranque** (`Core.lua`): los ids de misiones completadas se validan uno a uno antes de usarse; la lectura antigua del registro descarta ids que no son números mayores que 0.
+- **Filas del panel** (`Rows.lua`, `Rows_kit.lua`, `HUD.lua`): una fila reutilizada se mide desde cero (el texto de varias líneas ya no sale recortado); el último tramo del raíl no queda colgando al recortar por altura; un objetivo sin datos no se indexa.
+- **Ruta guiada en combate** (`Guia.lua`, `Core.lua`): una misión cuyo mapa no se pudo cargar en combate ya no recibe un registro falso; el plan se rehace al salir de combate. La flecha se vuelve a marcar cuando cambia el punto de la guía de la misión marcada. El aviso de misiones fuera de la guía nota las saltadas y las listas para entregar. La aceptación automática ve el plan al día aunque haya un refresco en cola.
+- **Saltar** (`Core.lua`): saltar un paso de la guía que no es una misión lo marca como hecho en vez de guardarlo entre las saltadas; al dejar el orden «Ruta» no queda elegido un paso de la guía ni una misión de otro mapa.
+- **Registro de errores** (`Errores.lua`, `Modules.lua`): un error repetido solo suma a su contador sin volver a construir la traza; no poder cambiar de mapa en combate ya no cuenta como error.
+- **Mapa y minimapa** (`MapPins.lua`, `MinimapPins.lua`): al cerrar el mapa se oculta también la marca de destino; la estrella de destino recupera su segundo brillo al reutilizar una marca; las coordenadas del cursor y el tamaño del mapa se validan antes de comparar.
+- **Nombres de PNJ** (`Navigation.lua`): el segundo intento de leer un nombre no se hace si ya estás dentro de una instancia.
+
+### Cambios visibles
+- **Flecha con varios puntos**: entre dos puntos de un objetivo a casi la misma distancia se queda en el que tenía; cambia cuando otro está más cerca por 15 m o un 10 %.
+- **Pasos de la guía**: una nota, la piedra o un vuelo solo se marcan solos cuando son el paso que toca.
+- **Misión terminada con 4 o más objetivos**: conserva la línea «Terminada: entrégala a…», con el nombre del PNJ en el idioma del juego.

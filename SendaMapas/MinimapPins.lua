@@ -118,8 +118,16 @@ function ns:ShowMinimapPinTooltip(pin)
 end
 
 local function hideAll()
+    if ns.minimapShown == 0 then return end
     for _, pin in ipairs(pool) do pin:Hide() end
     ns.minimapShown = 0
+end
+
+local function minimapHidden()
+    if not Minimap then return true end
+    if type(Minimap.IsShown) == "function" and Minimap:IsShown() == false then return true end
+    if type(Minimap.IsVisible) == "function" and Minimap:IsVisible() == false then return true end
+    return false
 end
 
 -- Mouse of a pin: on only for quest pins. SetPassThroughButtons may be restricted in combat in some clients
@@ -199,15 +207,32 @@ function ns:MeasureMinimapPins()
     end
 end
 
--- Every frame: place the pins from the measured values and the CURRENT facing, so they slide with
+-- Every frame when rotating: place the pins from the measured values and the CURRENT facing, so they slide with
 -- the rotating minimap instead of jumping.
-function ns:PlaceMinimapPins()
+local lastPlacedFacing, wasHidden
+function ns:PlaceMinimapPins(prefetchedFacing)
     local state = self.minimapState
     -- Without a minimap state (symbols off, unknown radius) the route line goes too, not only the symbols.
-    if not state then hideAll(); self:PlaceMinimapRoute(); return end
+    if not state then
+        lastPlacedFacing = nil
+        hideAll()
+        self:PlaceMinimapRoute()
+        return
+    end
     local radius, rotate, halfW, halfH, square = state.radius, state.rotate, state.halfW, state.halfH, state.square
-    local facing = self.Call(GetPlayerFacing)
-    if rotate and type(facing) ~= "number" then hideAll(); self:PlaceMinimapRoute(); return end
+    local facing
+    if rotate then
+        facing = prefetchedFacing ~= nil and prefetchedFacing or self.Call(GetPlayerFacing)
+        if type(facing) ~= "number" then
+            lastPlacedFacing = false
+            hideAll()
+            self:PlaceMinimapRoute()
+            return
+        end
+        lastPlacedFacing = facing
+    else
+        lastPlacedFacing = nil
+    end
     local used, destX, destY = 0, nil, nil
     -- Values shared by every pin of this frame; each pin only gets SetTexture/SetSize/SetFrameLevel/style
     -- calls when its kind, the scale, the intensity or the minimap's level changed.
@@ -242,7 +267,7 @@ function ns:PlaceMinimapPins()
                 end
                 if restyle or pin.appliedKind ~= kind then
                     pin.glow:SetShown(kind == "dest")
-                    if kind ~= "dest" then pin.glow2:Hide() end
+                    pin.glow2:SetShown(kind == "dest" and level > 1)
                     if pin.appliedKind ~= kind then setPinMouse(pin, target.quest ~= nil) end   -- quest pins only
                     pin.appliedKind = kind
                 end
@@ -271,12 +296,16 @@ function ns:PlaceMinimapRoute(destX, destY)
             routeHolder = CreateFrame("Frame", nil, Minimap)
             routeHolder:SetAllPoints(Minimap)
         end
-        routeHolder:SetFrameLevel((Minimap.GetFrameLevel and Minimap:GetFrameLevel() or 1) + 6)
-        routeHolder:Show()
+        local level = (Minimap.GetFrameLevel and Minimap:GetFrameLevel() or 1) + 6
+        if routeHolder.appliedLevel ~= level then
+            routeHolder:SetFrameLevel(level)
+            routeHolder.appliedLevel = level
+        end
+        if not routeHolder:IsShown() then routeHolder:Show() end
         local ok, result = pcall(ns.DrawRoute, routeHolder, Minimap, "CENTER", routeState, 0, 0, destX, destY, 1, 22, 11, 2, 12)
         drawn = ok and result and true or false
     end
-    if not drawn then
+    if not drawn and (ns.minimapRouteShown or (routeState.line and routeState.line:IsShown())) then
         if routeState.shadow then routeState.shadow:Hide() end
         if routeState.line then routeState.line:Hide() end
         for _, tex in ipairs(routeState.arrows) do tex:Hide() end
@@ -285,6 +314,7 @@ function ns:PlaceMinimapRoute(destX, destY)
 end
 
 function ns:UpdateMinimapPins()
+    wasHidden = false
     self:MeasureMinimapPins()
     self:PlaceMinimapPins()
 end
@@ -305,18 +335,35 @@ ns.minimapDriver = driver
 driver:SetScript("OnUpdate", function(self, elapsed)
     if not ns.saved or not Minimap then return end
     if ns.saved.minimapPins == false and not ns.minimapState then return end      -- off and already cleared
+    if minimapHidden() then
+        wasHidden = true
+        if ns.minimapShown > 0 or ns.minimapRouteShown then
+            hideAll()
+            ns:PlaceMinimapRoute()
+        end
+        return
+    end
     self.elapsed = self.elapsed + (elapsed or 0)
     self.sinceTargets = self.sinceTargets + (elapsed or 0)
-    if self.elapsed >= 0.1 then
+    if wasHidden or self.elapsed >= 0.1 then
+        wasHidden = false
         self.elapsed = 0
         if ns.minimapDirty or self.sinceTargets >= 5 then
             self.sinceTargets = 0
             ns:RefreshMinimapPins()      -- new list of targets, measured and placed
         else
-            ns:MeasureMinimapPins()
+            ns:UpdateMinimapPins()
+        end
+        return
+    end
+    local state = ns.minimapState
+    if state and state.rotate then
+        local facing = ns.Call(GetPlayerFacing)
+        local key = type(facing) == "number" and facing or false
+        if key ~= lastPlacedFacing then
+            ns:PlaceMinimapPins(facing)
         end
     end
-    ns:PlaceMinimapPins()
 end)
 
 -- ---------------------------------------------------------------------------------------------

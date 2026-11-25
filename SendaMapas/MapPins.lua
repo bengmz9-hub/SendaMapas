@@ -182,6 +182,7 @@ ns.zoneTextures = zoneTextures
 ns.zonesShown = 0
 
 local function hideZones()
+    if ns.zonesShown == 0 then return end
     for _, tex in ipairs(zoneTextures) do tex:Hide() end
     ns.zonesShown = 0
 end
@@ -189,10 +190,13 @@ end
 -- Route: straight line from the player to the destination with small arrows along it.
 local routeHolder, routeShadow, routeLine
 local routeArrows = {}
+local routeLast, routeKey = nil, {}
 ns.routeArrows = routeArrows
 ns.routeShown = false
 
 local function hideRoute()
+    routeLast = nil
+    if not ns.routeShown and not (routeShadow and routeShadow:IsShown()) and not (routeLine and routeLine:IsShown()) then return end
     if routeShadow then routeShadow:Hide() end
     if routeLine then routeLine:Hide() end
     for _, tex in ipairs(routeArrows) do tex:Hide() end
@@ -200,8 +204,10 @@ local function hideRoute()
 end
 
 local function hideAll()
-    for _, pin in ipairs(pool) do pin:Hide() end
-    ns.mapPinsShown = 0
+    if ns.mapPinsShown > 0 then
+        for _, pin in ipairs(pool) do pin:Hide() end
+        ns.mapPinsShown = 0
+    end
     hideZones()
     hideRoute()
 end
@@ -424,6 +430,13 @@ function ns:RefreshRoute()
         local value = parent:GetScale()
         if type(value) == "number" and value > 0 then unit = 1 / value end
     end
+    if ns.routeShown and routeLast
+        and routeKey.parent == parent and routeKey.map == mapID
+        and routeKey.px == px and routeKey.py == py
+        and routeKey.dx == dest.x and routeKey.dy == dest.y
+        and routeKey.w == width and routeKey.h == height and routeKey.u == unit then
+        return
+    end
     if not routeHolder or routeHolder:GetParent() ~= parent then
         routeHolder = CreateFrame("Frame", nil, parent)
         routeHolder:SetAllPoints(parent)
@@ -435,8 +448,14 @@ function ns:RefreshRoute()
     local ok, drawn = pcall(ns.DrawRoute, routeHolder, parent, "TOPLEFT", routeState,
         px * width, -py * height, dest.x * width, -dest.y * height, unit, 46, 18, 3, 60)
     routeShadow, routeLine = routeState.shadow, routeState.line
-    ns.routeShown = ok and drawn and true or false
-    if not ns.routeShown then hideRoute() end
+    if not (ok and drawn) then
+        hideRoute()
+        return
+    end
+    ns.routeShown = true
+    routeKey.parent, routeKey.map, routeKey.px, routeKey.py = parent, mapID, px, py
+    routeKey.dx, routeKey.dy, routeKey.w, routeKey.h, routeKey.u = dest.x, dest.y, width, height, unit
+    routeLast = true
 end
 
 function ns:RefreshQuestPins()
@@ -449,9 +468,11 @@ function ns:RefreshQuestPins()
         -- Loads the zone's module (skipped in combat); pins just stay empty if it fails.
         pcall(self.EnsureMap, self, zone)
     end
-    self:ReadLog()
-    self.context = self:Context()
-    self.levelShowCache = nil          -- phase 17 (review M2): new context, the level range is judged again
+    if not self.stateCache or not self.context then
+        self:ReadLog()
+        self.context = self:Context()
+        self.levelShowCache = nil          -- phase 17 (review M2): new context, the level range is judged again
+    end
     -- One state pass for the zones and the pins (both walk the quests of the log).
     local ok, list = pcall(self.CachedStates, self, function()
         if self.saved.mapZones ~= false then drawZones(parent, mapID) else hideZones() end
@@ -542,6 +563,7 @@ local function newDot(index, parent)
 end
 
 local function hideDestination()
+    if not ns.destShown and not (destBanner and destBanner:IsShown()) then return end
     if destPin then destPin:Hide() end
     for _, dot in ipairs(destDots) do dot:Hide() end
     if destBanner then destBanner:Hide() end
@@ -742,14 +764,20 @@ local function cursorOnMap()
     local container = WorldMapFrame and WorldMapFrame.ScrollContainer
     if container and type(container.GetNormalizedCursorPosition) == "function" then
         local ok, x, y = pcall(container.GetNormalizedCursorPosition, container)
-        if ok and type(x) == "number" and type(y) == "number" then return x, y end
+        x, y = ok and ns.Plain(x) or nil, ok and ns.Plain(y) or nil
+        if type(x) == "number" and type(y) == "number" then return x, y end
     end
     local parent = canvas()
     if not parent or type(GetCursorPosition) ~= "function" then return nil end
     local ok, cx, cy = pcall(GetCursorPosition)
-    local scale = parent.GetEffectiveScale and parent:GetEffectiveScale()
-    local left, top, width, height = parent:GetLeft(), parent:GetTop(), parent:GetWidth(), parent:GetHeight()
-    if not (ok and type(cx) == "number" and type(scale) == "number" and scale > 0 and left and top and width and height
+    cx, cy = ok and ns.Plain(cx) or nil, ok and ns.Plain(cy) or nil
+    local scale = parent.GetEffectiveScale and ns.Plain(parent:GetEffectiveScale())
+    local left = parent.GetLeft and ns.Plain(parent:GetLeft())
+    local top = parent.GetTop and ns.Plain(parent:GetTop())
+    local width = parent.GetWidth and ns.Plain(parent:GetWidth())
+    local height = parent.GetHeight and ns.Plain(parent:GetHeight())
+    if not (type(cx) == "number" and type(cy) == "number" and type(scale) == "number" and scale > 0
+        and type(left) == "number" and type(top) == "number" and type(width) == "number" and type(height) == "number"
         and width > 0 and height > 0) then return nil end
     return (cx / scale - left) / width, (top - cy / scale) / height
 end
@@ -868,30 +896,7 @@ function ns:MapPinModeName()
     return self.saved.mapPinMode == "todo" and "Todo" or "Solo «?»"
 end
 
--- Hooks: refresh when the world map is shown or its map changes.
-local hooked = false
-function ns:HookWorldMap()
-    if hooked or not WorldMapFrame then return end
-    local function refresh() if ns.saved then ns:RefreshMapPins() end end
-    if WorldMapFrame.HookScript then
-        pcall(WorldMapFrame.HookScript, WorldMapFrame, "OnShow", refresh)
-        pcall(WorldMapFrame.HookScript, WorldMapFrame, "OnHide", function() hideAll() end)
-        hooked = true
-    end
-    if type(hooksecurefunc) == "function" and type(WorldMapFrame.OnMapChanged) == "function" then
-        pcall(hooksecurefunc, WorldMapFrame, "OnMapChanged", refresh)
-    end
-    local container = WorldMapFrame.ScrollContainer
-    if container and container.HookScript then
-        -- Zooming changes the canvas scale: re-apply the pin scale shortly after.
-        pcall(container.HookScript, container, "OnMouseWheel", function()
-            if C_Timer and C_Timer.After then C_Timer.After(0.15, refresh) end
-        end)
-    end
-    if WorldMapFrame:IsShown() then refresh() end
-end
-
--- The player moves while the map is open: keep the route start on the player.
+-- The player moves while the map is open: keep the route start on the player (hidden when the map is closed).
 local routeTimer = CreateFrame("Frame")
 routeTimer.elapsed = 0
 routeTimer:SetScript("OnUpdate", function(self, elapsed)
@@ -900,6 +905,41 @@ routeTimer:SetScript("OnUpdate", function(self, elapsed)
     self.elapsed = 0
     if ns.saved and ns.dest and WorldMapFrame and WorldMapFrame:IsShown() then ns:RefreshRoute() end
 end)
+routeTimer:Hide()
+ns.routeTimer = routeTimer
+
+-- Hooks: refresh when the world map is shown or its map changes.
+local hookedMap
+function ns:HookWorldMap()
+    if not WorldMapFrame or hookedMap == WorldMapFrame then return end
+    local function refresh() if ns.saved then ns:RefreshMapPins() end end
+    if WorldMapFrame.HookScript then
+        pcall(WorldMapFrame.HookScript, WorldMapFrame, "OnShow", function()
+            routeTimer:Show()
+            refresh()
+        end)
+        pcall(WorldMapFrame.HookScript, WorldMapFrame, "OnHide", function()
+            routeTimer:Hide()
+            hideAll()
+            hideDestination()
+        end)
+        hookedMap = WorldMapFrame
+    end
+    if type(hooksecurefunc) == "function" and type(WorldMapFrame.OnMapChanged) == "function" then
+        pcall(hooksecurefunc, WorldMapFrame, "OnMapChanged", refresh)
+    end
+    local container = WorldMapFrame.ScrollContainer
+    if container and container.HookScript then
+        -- Zooming changes the canvas scale: re-apply the pin scale shortly after (coalesced).
+        local wheelPending
+        pcall(container.HookScript, container, "OnMouseWheel", function()
+            if wheelPending or not (C_Timer and C_Timer.After) then return end
+            wheelPending = true
+            C_Timer.After(0.15, function() wheelPending = nil; refresh() end)
+        end)
+    end
+    if WorldMapFrame:IsShown() then routeTimer:Show(); refresh() else routeTimer:Hide() end
+end
 
 local watcher = CreateFrame("Frame")
 for _, event in ipairs({"ADDON_LOADED", "PLAYER_ENTERING_WORLD"}) do pcall(watcher.RegisterEvent, watcher, event) end

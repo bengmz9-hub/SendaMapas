@@ -39,6 +39,7 @@ local GROUP_STYLE = {
     ISLA = {name = "Islas Forever", color = {0.72, 0.56, 0.95}},
     MAZ = {name = "Mazmorras", color = {0.93, 0.48, 0.42}},
 }
+local GROUP_ROLE = {EK = "ek", KAL = "kal", ISLA = "isla", MAZ = "maz"}
 local PICKER_ROW, PICKER_HEAD, PICKER_WIDTH = 40, 24, 372
 
 function ns:MapPickerLabel(zoneId)
@@ -84,20 +85,24 @@ function ns:RenderMapPicker()
     -- phase 17, step 2: the recommended zones (Navigation.lua NextZone), once for the whole list
     local rec, rank = self.NextZone and self:NextZone(), {}
     for index, c in ipairs(rec and rec.top or {}) do rank[c.zid] = {index, c} end
+    local labelsByZone, labelCounts = {}, {}
+    for id in pairs(self.Index.maps) do
+        local name = self:MapLabel(id)
+        labelsByZone[id] = name
+        labelCounts[name] = (labelCounts[name] or 0) + 1
+    end
     for _, row in ipairs(self.mapRows) do
         local zoneId = row.zoneId
         local info = self.Index.maps[zoneId]
         local style = GROUP_STYLE[info.g] or GROUP_STYLE.EK
         local active, here = zoneId == self.saved.map, zoneId == self.currentZone
-        local groupRole = ({EK = "ek", KAL = "kal", ISLA = "isla", MAZ = "maz"})[info.g] or "ek"
+        local groupRole = GROUP_ROLE[info.g] or "ek"
         local gc = ns.palette[groupRole]
         row.strip:SetColorTexture(gc[1], gc[2], gc[3], 1)
         local bc = active and ns.palette.rowSel or (row.zebra and ns.palette.rowBg or ns.palette.rowAlt)
         row.back:SetColorTexture(bc[1], bc[2], bc[3], bc[4])
-        local label = self:MapLabel(zoneId)
-        local same = 0
-        for otherId in pairs(self.Index.maps) do if self:MapLabel(otherId) == label then same = same + 1 end end
-        if same > 1 then label = label .. " (" .. zoneId .. ")" end      -- two maps with one name (the two Dalaran)
+        local label = labelsByZone[zoneId] or self:MapLabel(zoneId)
+        if (labelCounts[label] or 0) > 1 then label = label .. " (" .. zoneId .. ")" end      -- two maps with one name (the two Dalaran)
         row.name:SetText((active and ns.Esc("accent", "> ") or "") .. ns.Esc("instruction", label) ..
             (here and ("  " .. ns.Esc("ent", "(estás aquí)")) or ""))
         row.range:SetText(ns.Esc("title", self:RangeText(zoneId)))
@@ -199,9 +204,9 @@ function ns:ToggleMapPicker()
         if UISpecialFrames then table.insert(UISpecialFrames, "SendaMapasPicker") end
         f:Hide()
     end
-    self:RenderMapPicker()
     local opening = not self.mapPicker:IsShown()
     self.mapPicker:SetShown(opening)
+    if opening then self:RenderMapPicker() end
     if opening and self.pickerScroll and self.pickerScroll.SetVerticalScroll then
         local row = self.mapButtons[self.Index.maps[self.saved.map] and self.Index.maps[self.saved.map].o or 1]
         if row and row.y then pcall(self.pickerScroll.SetVerticalScroll, self.pickerScroll, math.max(0, row.y - 120)) end

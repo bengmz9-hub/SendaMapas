@@ -94,16 +94,19 @@ local function joinNames(list, names)
     return table.concat(out, "/")
 end
 
+-- One category hit: false when its mode hides the quest, else true (marking adds its tag). A file-level function, not a
+-- closure made for every quest of every call.
+local function apply(modes, tags, key, tag)
+    local mode = modes[key] or "mark"
+    if mode == "hide" then return false end
+    if mode == "mark" then tags[#tags+1] = tag end
+    return true
+end
+
 -- Visible(q, context, modes, state) -> visible, tags
 function F.Visible(q, c, modes, state)
     if F.HasFlag(q, "unimplementedStub") then return false, {} end
     local tags = {}
-    local function apply(key, tag)
-        local mode = modes[key] or "mark"
-        if mode == "hide" then return false end
-        if mode == "mark" then tags[#tags+1] = tag end
-        return true
-    end
     for _, category in ipairs(F.categories) do
         local hit, tag = false, category.tag
         if category.flags then
@@ -122,7 +125,7 @@ function F.Visible(q, c, modes, state)
         elseif category.key == "done" then
             hit = state == "done"
         end
-        if hit and not apply(category.key, tag) then return false, tags end
+        if hit and not apply(modes, tags, category.key, tag) then return false, tags end
     end
     if F.HasFlag(q, "legendary") then tags[#tags+1] = "Legendaria" end
     return true, tags

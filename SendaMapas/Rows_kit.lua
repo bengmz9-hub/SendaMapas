@@ -580,6 +580,7 @@ ns.RowLayouts.steps = {
         y = y + barH
         if item.detail then
             row.detail:SetWidth(rowWidth - 62)
+            row.detail:SetHeight(0)
             row.detail:SetText(item.detail)
             local detailH = kit.textHeight(row.detail, item.detail, rowWidth - 62, 5.6, 13)
             row.detail:ClearAllPoints()

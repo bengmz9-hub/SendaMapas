@@ -89,8 +89,11 @@ ns.RowLayouts.classic = {
         row.title:SetTextColor(unpack(item.locked and palette.muted or palette.title))
         row.instruction:SetTextColor(unpack(palette.instruction))
         row.title:SetWidth(rowWidth - 4 - glyphWidth)
+        row.title:SetHeight(0)
         row.instruction:SetWidth(rowWidth - 4)
+        row.instruction:SetHeight(0)
         row.detail:SetWidth(rowWidth - 14)
+        row.detail:SetHeight(0)
         -- a quest row unfolds on click: its title ends with "+" (closed) or "-" (open), as text.
         local title = item.title
         if item.state ~= "empty" then title = title .. "  " .. ns.Esc("muted", item.lines and "-" or "+") end

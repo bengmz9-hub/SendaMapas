@@ -474,6 +474,16 @@ local function pointIn(entities, zone)
     end
 end
 
+-- Same check as pointIn without allocating a point table (used before the route cache check).
+local function hasPointIn(entities, zone)
+    for _, entity in ipairs(entities or {}) do
+        for _, point in ipairs(entity.c and entity.c[zone] or {}) do
+            if validPoint(point) then return true end
+        end
+    end
+    return false
+end
+
 -- The zone of a receiver that is not in this zone (the lowest zone id of its points, as Navigation.lua does).
 local function otherZone(entities, zone)
     for _, entity in ipairs(entities or {}) do
@@ -527,8 +537,9 @@ function ns:BuildRoute(ids)
         return false
     end
 
-    local quests, out, ent = {}, {}, {}
+    local cand, candQ, candSt, pendingById, out = {}, {}, {}, {}, {}
     local state, class, objSig = {}, {}, {}
+    local hasEx, hasLater = false, false
     for _, id in ipairs(ids) do
         local q = self:Quest(id)
         local st = self:EntryState(id)
@@ -538,18 +549,12 @@ function ns:BuildRoute(ids)
             if profession then
                 out[#out + 1] = id; class[id] = "o"
             else
-                local pending, signature
-                if st == "active" then pending, signature = self:UnfinishedObjectives(q) end
-                local obs, nopos = objectivesIn(pending, zone)
-                if st == "active" and #obs == 0 then nopos = true end
-                local ep, receiver = pointIn(q.e, zone)
-                quests[#quests + 1] = {id = id, st = st, ep = ep, ez = not ep and otherZone(q.e, zone) or nil, obs = obs,
-                    nopos = nopos, p = q.p, soft = flagged(q, SOFT_FLAGS)}
-                ent[id] = {e = receiver}
-                class[id], objSig[id] = "r", signature
+                if st == "active" then pendingById[id], objSig[id] = self:UnfinishedObjectives(q) end
+                cand[#cand + 1] = id
+                candQ[id], candSt[id], class[id] = q, st, "r"
             end
         elseif q and (st == "available" or st == "prereq") then
-            local sp, giver = pointIn(q.s, zone)
+            local hasSp = hasPointIn(q.s, zone)
             local levelOK
             if st == "available" then
                 levelOK = (not self.LevelShow or self:LevelShow(q, st) == "show")
@@ -557,63 +562,63 @@ function ns:BuildRoute(ids)
             else
                 levelOK = not self.LevelRange or self:LevelRange(q) == nil
             end
-            if profession or flagged(q, excluded) or not sp or not levelOK then
+            if profession or flagged(q, excluded) or not hasSp or not levelOK then
                 -- a quest still locked has no row: it is not announced as out of the route either
                 if st == "available" then out[#out + 1] = id; class[id] = "o" end
             else
-                local obs, nopos = objectivesIn(q.ob, zone)
-                local ep, receiver = pointIn(q.e, zone)
-                local same = giver and receiver and giver.k == receiver.k and giver.i == receiver.i
-                if #(q.ob or {}) == 0 and (#(q.ot or {}) > 0 or (same and #(q.o or {}) > 0)) then nopos = true end
-                quests[#quests + 1] = {id = id, st = st == "available" and "available" or "later", sp = sp, ep = ep,
-                    ez = not ep and otherZone(q.e, zone) or nil, obs = obs, nopos = nopos, p = q.p, ex = q.ex,
-                    soft = flagged(q, SOFT_FLAGS)}
-                ent[id] = {s = giver, e = receiver}
-                class[id] = "r"
+                local cst = st == "available" and "available" or "later"
+                if cst == "later" then hasLater = true end
+                if q.ex and #q.ex > 0 then hasEx = true end
+                cand[#cand + 1] = id
+                candQ[id], candSt[id], class[id] = q, cst, "r"
             end
         end
     end
     -- Exclusive quests: what can be picked up now wins over a locked quest (and earlier in the module wins ties).
-    local taken = {}
-    local function loses(entry)
-        for _, other in ipairs(entry.ex or {}) do if taken[other] then return true end end
-        return false
-    end
-    for _, entry in ipairs(quests) do
-        if entry.st == "available" then
-            if loses(entry) then entry.lost = true else taken[entry.id] = true end
+    if hasEx then
+        local taken, lost = {}, {}
+        local function loses(id)
+            local ex = candQ[id].ex
+            for _, other in ipairs(ex or {}) do if taken[other] then return true end end
+            return false
         end
-    end
-    for _, entry in ipairs(quests) do
-        if entry.st == "later" then
-            if loses(entry) then entry.lost = true else taken[entry.id] = true end
-        end
-    end
-    local kept = {}
-    for _, entry in ipairs(quests) do
-        if entry.lost then
-            ent[entry.id] = nil
-            if entry.st == "available" then out[#out + 1] = entry.id; class[entry.id] = "o"
-            else class[entry.id] = nil end
-        else
-            kept[#kept + 1] = entry
-        end
-    end
-    quests = kept
-    -- A locked quest stays only while some previous quest of it is in the plan (so it can open during the route).
-    for _ = 1, Route.REACH_MAX do
-        local present, kept = {}, {}
-        for _, entry in ipairs(quests) do present[entry.id] = true end
-        for _, entry in ipairs(quests) do
-            local keep = entry.st ~= "later"
-            if not keep then
-                for _, previous in ipairs(entry.p or {}) do if present[previous] then keep = true; break end end
+        for _, id in ipairs(cand) do
+            if candSt[id] == "available" then
+                if loses(id) then lost[id] = true else taken[id] = true end
             end
-            if keep then kept[#kept + 1] = entry else class[entry.id], ent[entry.id] = nil, nil end
         end
-        local dropped = #kept < #quests
-        quests = kept
-        if not dropped then break end
+        for _, id in ipairs(cand) do
+            if candSt[id] == "later" then
+                if loses(id) then lost[id] = true else taken[id] = true end
+            end
+        end
+        local kept = {}
+        for _, id in ipairs(cand) do
+            if lost[id] then
+                if candSt[id] == "available" then out[#out + 1] = id; class[id] = "o"
+                else class[id] = nil end
+            else
+                kept[#kept + 1] = id
+            end
+        end
+        cand = kept
+    end
+    -- A locked quest stays only while some previous quest of it is in the plan (so it can open during the route).
+    if hasLater then
+        for _ = 1, Route.REACH_MAX do
+            local present, kept = {}, {}
+            for _, id in ipairs(cand) do present[id] = true end
+            for _, id in ipairs(cand) do
+                local keep = candSt[id] ~= "later"
+                if not keep then
+                    for _, previous in ipairs(candQ[id].p or {}) do if present[previous] then keep = true; break end end
+                end
+                if keep then kept[#kept + 1] = id else class[id] = nil end
+            end
+            local dropped = #kept < #cand
+            cand = kept
+            if not dropped then break end
+        end
     end
 
     -- The player's position in this zone (0-100); (0, 0) is the client's "no position".
@@ -630,6 +635,30 @@ function ns:BuildRoute(ids)
     local sig = table.concat(parts, "|")
     local cache = self.routeCache
     if cache and cache.sig == sig then return cache.plan end
+
+    -- Materialize objective points, entities and soft flags only on cache miss (signature above is identical).
+    local quests, ent = {}, {}
+    for _, id in ipairs(cand) do
+        local q, st = candQ[id], candSt[id]
+        if st == "active" or st == "turnin" then
+            local obs, nopos = objectivesIn(pendingById[id], zone)
+            if st == "active" and #obs == 0 then nopos = true end
+            local ep, receiver = pointIn(q.e, zone)
+            quests[#quests + 1] = {id = id, st = st, ep = ep, ez = not ep and otherZone(q.e, zone) or nil, obs = obs,
+                nopos = nopos, p = q.p, soft = flagged(q, SOFT_FLAGS)}
+            ent[id] = {e = receiver}
+        else
+            local sp, giver = pointIn(q.s, zone)
+            local obs, nopos = objectivesIn(q.ob, zone)
+            local ep, receiver = pointIn(q.e, zone)
+            local same = giver and receiver and giver.k == receiver.k and giver.i == receiver.i
+            if #(q.ob or {}) == 0 and (#(q.ot or {}) > 0 or (same and #(q.o or {}) > 0)) then nopos = true end
+            quests[#quests + 1] = {id = id, st = st, sp = sp, ep = ep,
+                ez = not ep and otherZone(q.e, zone) or nil, obs = obs, nopos = nopos, p = q.p, ex = q.ex,
+                soft = flagged(q, SOFT_FLAGS)}
+            ent[id] = {s = giver, e = receiver}
+        end
+    end
 
     -- The first stop of the plan before stays the first one while the player is near it (or has no position).
     local prefer

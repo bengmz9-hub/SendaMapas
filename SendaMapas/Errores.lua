@@ -35,6 +35,15 @@ local function context()
     }
 end
 
+-- Fast path of the handler: raw error message -> its entry, so an error that repeats every frame (an OnUpdate) only adds
+-- 1 to its count without building the stack again. Emptied whenever an entry can leave the list (prune, capForeign,
+-- ClearErrors, InitErrors) so it never points at an entry that is gone.
+local seen, seenCount, MAX_SEEN = {}, 0, 100
+local function forgetSeen()
+    for key in pairs(seen) do seen[key] = nil end
+    seenCount = 0
+end
+
 -- The same error already in the list (kind, text and addon).
 local function sameEntry(list, kind, text, addon)
     for _, entry in ipairs(list) do
@@ -51,6 +60,7 @@ local function capForeign(list)
             if list[index].kind == "otro" then table.remove(list, index); break end
         end
         foreign = foreign - 1
+        forgetSeen()
     end
 end
 
@@ -62,6 +72,7 @@ local function prune(list)
             if list[index].kind == "otro" then victim = index; break end
         end
         table.remove(list, victim)
+        forgetSeen()
     end
 end
 
@@ -107,6 +118,7 @@ function ns:InitErrors()
         end
     end
     for index = #buffer, 1, -1 do buffer[index] = nil end
+    forgetSeen()
     capForeign(list)
     prune(list)
 end
@@ -154,6 +166,7 @@ end
 function ns:ClearErrors()
     if self.saved then self.saved.errors = {} end
     for index = #buffer, 1, -1 do buffer[index] = nil end
+    forgetSeen()
     self:Print("Registro de errores vaciado.")
     if self.UpdateErrorBadge then self:UpdateErrorBadge() end
 end
@@ -280,11 +293,26 @@ local function handler(message)
     if not capturing then
         capturing = true
         pcall(function()
+            -- the same message again (same file and line): only its count goes up, no stack is built
+            local key = ns.Plain and ns.Plain(message) or message
+            if type(key) ~= "string" then key = nil end
+            local known = key and seen[key]
+            if known then
+                known.count = (known.count or 1) + 1
+                known.last = (type(time) == "function" and time()) or known.last
+                return
+            end
             local stack = type(debugstack) == "function" and debugstack(3) or nil
+            local entry
             if mentionsUs(tostring(message)) or mentionsUs(withoutHandlerFrames(stack)) then
-                ns:LogError("lua", message, stack)
+                entry = ns:LogError("lua", message, stack)
             else
-                ns:LogError("otro", message, stack, culpritAddon(message, stack) or "?")
+                entry = ns:LogError("otro", message, stack, culpritAddon(message, stack) or "?")
+            end
+            if key and type(entry) == "table" and seenCount < MAX_SEEN then
+                for _, kept in ipairs(store()) do      -- the new entry may have been pruned at once (a full list)
+                    if kept == entry then seen[key] = entry; seenCount = seenCount + 1; break end
+                end
             end
         end)
         capturing = false

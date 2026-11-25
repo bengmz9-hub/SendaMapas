@@ -205,7 +205,7 @@ function ns:ApplySkin(quiet)
     for _, entry in ipairs(skinFrames) do applyFrame(entry, skin) end
     if self.RepaintSurfaces then self:RepaintSurfaces() end
     if self.RenderHUD and self.frame then self:RenderHUD() end
-    if self.RenderMapPicker and self.mapPicker then self:RenderMapPicker() end
+    if self.RenderMapPicker and self.mapPicker and self.mapPicker:IsShown() then self:RenderMapPicker() end      -- shown: repainted when opened
     if self.RenderFilterOptions then self:RenderFilterOptions() end
     -- Review M2: what has its own colors and is on screen now takes the new skin at once (the arrow's leg bar does
     -- by itself: its cache key carries the skin): the notice next to the panel, the coordinates plate of the open
