@@ -1220,6 +1220,7 @@ local SETTINGS = {
     {"textSize", oneOf("small", "normal", "large")}, {"stateSymbols", bool, writeBool},
     {"progressSound", bool, writeBool}, {"autoNavigate", bool, writeBool}, {"autoSelect", bool, writeBool},
     {"hideTurnin", bool, writeBool}, {"openAll", bool, writeBool}, {"autoTurnin", bool, writeBool}, {"autoAccept", bool, writeBool},
+    {"stepBanner", bool, writeBool}, {"trainerNotice", bool, writeBool},
     {"listOrder", oneOf("progresion", "cercania", "pasos", "ruta")}, {"lockedPins", bool, writeBool},
     {"minimapButton", bool, writeBool}, {"minimapButtonAngle", int(0, 359), writeInt}, {"mapCoords", bool, writeBool},
     {"focusMode", bool, writeBool}, {"lightMapIcons", bool, writeBool}, {"turninNotice", function(value)       -- "both" (the old chat mode) imports as "panel"

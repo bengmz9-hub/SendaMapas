@@ -664,8 +664,10 @@ local function spellsKnown(self, spells)
     return true
 end
 
--- A1 (coordinator's decision): a step is passed when a hand-in later in its guide is done; the steps after the last
--- quest entry of a guide, when the next guide of the chain has a hand-in done. Else, marked by hand or (level) reached.
+-- A1 (coordinator's decision) + Phase 5 catch-up: a non-quest step is passed when it lies before the player's
+-- progress frontier in the guide (completed hand-in/pickup/objective, or active pickup/finished objective), when a
+-- hand-in later in its guide is done, or (after the last quest entry) when the next guide of the chain has a hand-in
+-- done. Never writes permanent hand marks; /smapas guia alcanzar no switches all catch-up off.
 local function stepPending(self, e, key, index, who, pass)
     if e.only ~= nil and Guide.Eval(e.only, who) == false then return false end
     local done = doneSet(self)
@@ -676,6 +678,7 @@ local function stepPending(self, e, key, index, who, pass)
     end
     if e.k == "fp" and flightKnown(self, e) then return false end              -- step 2: a flight point remembered
     if e.k == "train" and spellsKnown(self, e.spells) then return false end    -- step 2: every spell of the step known
+    if pass.frontier and pass.frontier > 0 and index < pass.frontier then return false end
     if pass.lastDoneT and index < pass.lastDoneT then return false end
     if index > pass.lastQuest and pass.trailing() then return false end
     return true
@@ -686,6 +689,46 @@ local function handInDone(reader, guide)
         if type(e) == "table" and e.k == "t" and type(e.q) == "number" and reader.completed(e.q) then return true end
     end
     return false
+end
+
+-- Progress frontier and catch-up state for a version 2 guide (shared by collect and GuideRecap).
+local function guidePass(self, reader, guide, guides, who)
+    local lastDoneT, lastQuest, frontier = nil, 0, 0
+    local skipped = self.saved and self.saved.skipped
+    for index, e in ipairs(guide.steps) do
+        if type(e) == "table" and KIND[e.k] then
+            lastQuest = index
+            local q = e.q
+            local applies = type(q) == "number"
+                and not (skipped and skipped[q])
+                and not (e.only ~= nil and Guide.Eval(e.only, who) == false)
+            if e.k == "t" and type(q) == "number" and reader.completed(q) then lastDoneT = index end
+            -- the player's progress along the guide: the last quest handed in, or picked up (completed or active in the
+            -- log); an entry excluded by `only` or skipped is no progress. An objective done is NOT progress (coordinator's
+            -- review): kills count while walking, and it would pass over pickups the player has not reached yet (the
+            -- simulation of the shipped guides lost 7 quests with it).
+            if applies and ((e.k == "t" and reader.completed(q))
+                or (e.k == "a" and (reader.completed(q) or reader.active(q)))) then
+                frontier = index
+            end
+        end
+    end
+    local catchUp = not (self.saved and self.saved.guideCatchUp == false)
+    if not catchUp then lastDoneT, frontier = nil, 0 end
+    local trailing
+    return {lastDoneT = lastDoneT, lastQuest = lastQuest, frontier = frontier, catchUp = catchUp, trailing = function()
+        if not catchUp then return false end
+        if trailing == nil then
+            trailing = false
+            for _, g in ipairs(guides or {}) do
+                if type(g) == "table" and type(guide.next) == "string" and g.name == guide.next then
+                    trailing = handInDone(reader, g)
+                    break
+                end
+            end
+        end
+        return trailing
+    end}
 end
 
 local function collect(self, reader, guide, data, inIds, firstOnly)
@@ -709,33 +752,7 @@ local function collect(self, reader, guide, data, inIds, firstOnly)
     if v2 then
         ensureRecords(self)
         position = guidePosition(guides, guide)
-        local lastDoneT, lastQuest, frontier = nil, 0, 0
-        for index, e in ipairs(guide.steps) do
-            if type(e) == "table" and KIND[e.k] then
-                lastQuest = index
-                if e.k == "t" and type(e.q) == "number" and reader.completed(e.q) then lastDoneT = index end
-                -- the player's progress along the guide: the last quest handed in, or picked up and still in the log;
-                -- an entry that does not apply to the player (`only`) or a skipped quest is no progress
-                if type(e.q) == "number" and not (self.saved.skipped and self.saved.skipped[e.q])
-                    and not (e.only ~= nil and Guide.Eval(e.only, who) == false)
-                    and ((e.k == "t" and reader.completed(e.q))
-                        or (e.k == "a" and (reader.completed(e.q) or reader.active(e.q)))) then frontier = index end
-            end
-        end
-        if self.saved.guideCatchUp == false then frontier = 0 end
-        local trailing
-        pass = {lastDoneT = lastDoneT, lastQuest = lastQuest, frontier = frontier, trailing = function()
-            if trailing == nil then
-                trailing = false
-                for _, g in ipairs(guides or {}) do
-                    if type(g) == "table" and type(guide.next) == "string" and g.name == guide.next then
-                        trailing = handInDone(reader, g)
-                        break
-                    end
-                end
-            end
-            return trailing
-        end}
+        pass = guidePass(self, reader, guide, guides, who)
     end
     local picked, turned, items, waiting, nodata, full, hidden = {}, {}, {}, 0, 0, 0, 0
     local passedQ = {}                 -- quests whose pickup was passed over (catch up): their other entries are passed too
@@ -763,12 +780,13 @@ local function collect(self, reader, guide, data, inIds, firstOnly)
             end
         elseif type(e) == "table" then
             key = v2 and entryKey(letter, guide, e, index) or nil
-            -- catch up (like Zygor / RestedXP): a pickup the player never took, before the progress made in this guide,
-            -- is passed over (neither pending nor waiting)
+            -- catch up: a pickup never taken before the player's progress in this guide (and its objectives/hand-in, or
+            -- cross-guide objectives/hand-ins never taken before the frontier) is passed over without writing a mark
             if pass and e.k == "a" and index < pass.frontier and type(e.q) == "number" and not reader.active(e.q) then
                 passedQ[e.q] = true
-            elseif pass and e.k ~= "a" and passedQ[e.q] and not reader.active(e.q) then
-                -- the objectives / hand-in of a quest never taken, passed over: neither pending nor waiting
+            elseif pass and e.k ~= "a" and type(e.q) == "number" and (passedQ[e.q] or index < pass.frontier)
+                and not reader.active(e.q) and not picked[e.q] then
+                -- the objectives / hand-in of a quest never taken before progress: neither pending nor waiting
             else
                 open, missing = pending(self, reader, e, who, key, v2, tried)
             end
@@ -1172,6 +1190,10 @@ function ns:GuideReadTaxiMap()
 end
 
 function ns:GuideEvent(event, ...)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if self.saved and self.recapPending and self.CheckRecapNotice then return self:CheckRecapNotice() end
+        return false
+    end
     if not acting(self) then return false end
     local a1, a2, a3, _, a5 = ...
     if event == "HEARTHSTONE_BOUND" then                                    -- decision 3: near the step's innkeeper
@@ -1258,6 +1280,7 @@ for _, event in ipairs(GUIDE_EVENTS) do
     end
     if not registered then pcall(guideEvents.RegisterEvent, guideEvents, event) end
 end
+pcall(guideEvents.RegisterEvent, guideEvents, "PLAYER_REGEN_ENABLED")
 guideEvents:SetScript("OnEvent", function(_, event, ...)
     local ok, err = pcall(ns.GuideEvent, ns, event, ...)
     if not ok and ns.ReportIssue then ns:ReportIssue("Ruta guiada", err) end
@@ -1494,6 +1517,329 @@ function ns:CheckOrphanNotice()
     return true
 end
 
+-- ---------------------------------------------------------------------------------------------
+-- Phase 5: recap when the active guide changes (once per guide change, never on steady-state refreshes; held in
+-- combat or inside an instance; silenced by /smapas avisos no; copyable window via «Ver» or /smapas guia resumen).
+local RECAP_NOTICE_SECONDS, RECAP_NEXT_MAX, NOTICE_LINE2_MAX = 15, 5, 56
+local RECAP_VERB = {recoger = "Recoger ", hacer = "Hacer ", entregar = "Entregar "}
+local RECAP_KIND_WORD = {a = "Recoger", o = "Hacer", t = "Entregar"}
+
+local function truncate(text, limit)
+    if type(text) ~= "string" or #text <= limit then return text end
+    local cut = limit - 3
+    while cut > 0 do
+        local b = text:byte(cut + 1)
+        if not b or b < 128 or b >= 192 then break end
+        cut = cut - 1
+    end
+    return text:sub(1, cut) .. "..."
+end
+
+local function guideRangeTitle(guide)
+    local name = type(guide.name) == "string" and guide.name or "?"
+    if guide.lo and guide.hi then
+        local range = "(" .. tostring(guide.lo) .. "-" .. tostring(guide.hi) .. ")"
+        if not name:find(range, 1, true) then return name .. " " .. range end
+    end
+    return name
+end
+
+local function recapQuestName(self, q, e)
+    local rec = self:Quest(q)
+    if rec and type(rec.n) == "string" and rec.n ~= "" then return rec.n end
+    local logEntry = self.log and self.log[q]
+    if type(logEntry) == "table" and type(logEntry.title) == "string" and logEntry.title ~= "" then return logEntry.title end
+    local fromGuide = e and clean(e.name)
+    if fromGuide then return fromGuide end
+    return "Misión " .. tostring(q)
+end
+
+local function recapStepLabel(e)
+    local title = STEP_TITLE[e.k] or "Paso"
+    local label = clean(e.label)
+    if e.k == "level" and not label and tonumber(e.lv) then label = "hasta el nivel " .. tonumber(e.lv) end
+    if not label and e.k == "note" then label = clean(e.text) end
+    return label and (title .. ": " .. label) or title
+end
+
+local function zoneSuffix(self, e)
+    local a = tonumber(e.a)
+    if a and self.Index.maps[a] and self.saved and a ~= self.saved.map then
+        return " · " .. self:MapLabel(a)
+    end
+    return ""
+end
+
+local function findRecapGuide(self)
+    local letter, guides, two = self:GuideSet()
+    if not guides then return nil end
+    local plan = self.routePlan
+    local planName = plan and plan.guided and plan.guided.name
+    if type(planName) == "string" then
+        for _, g in ipairs(guides) do
+            if type(g) == "table" and g.name == planName then return g, letter, two, guides end
+        end
+    end
+    local guide = self:CurrentGuide()
+    if guide then return guide, letter, two, guides end
+    return nil
+end
+
+local function buildRecap(self)
+    local guide, letter, two, guides = findRecapGuide(self)
+    if not (guide and type(guide.steps) == "table") then return nil end
+    local v2 = isV2(self)
+    local inInstance = self:InInstance()
+    local who = self.context or {}
+    local reader = newReader(self)
+    local done = v2 and doneSet(self) or nil
+    local skipped = self.saved and self.saved.skipped
+    local pass = v2 and guidePass(self, reader, guide, guides, who) or nil
+
+    local total, doneCount = 0, 0
+    local completedList, completedSeen = {}, {}
+    local inLogList, inLogSeen = {}, {}
+    local passedList, passedQuestSeen = {}, {}
+    local markedList, upcoming = {}, {}
+    local passedQ, pickedUpcoming = {}, {}
+
+    for index, e in ipairs(guide.steps) do
+        if type(e) == "table" and not (e.only ~= nil and Guide.Eval(e.only, who) == false) then
+            if v2 and STEP_TITLE[e.k] then
+                total = total + 1
+                local key = entryKey(letter, guide, e, index)
+                local label = recapStepLabel(e)
+                local lv = e.k == "level" and tonumber(e.lv)
+                if done and done[key] then
+                    doneCount = doneCount + 1
+                    markedList[#markedList + 1] = label .. " (marcado a mano)"
+                elseif lv and type(who.level) == "number" and who.level >= lv then
+                    doneCount = doneCount + 1
+                    passedList[#passedList + 1] = label .. " (nivel alcanzado)"
+                elseif not inInstance and e.k == "fp" and flightKnown(self, e) then
+                    doneCount = doneCount + 1
+                    passedList[#passedList + 1] = label .. " (vuelo conocido)"
+                elseif not inInstance and e.k == "train" and spellsKnown(self, e.spells) then
+                    doneCount = doneCount + 1
+                    passedList[#passedList + 1] = label .. " (aprendido)"
+                elseif (pass.frontier and pass.frontier > 0 and index < pass.frontier)
+                    or (pass.lastDoneT and index < pass.lastDoneT)
+                    or (index > pass.lastQuest and pass.trailing()) then
+                    doneCount = doneCount + 1
+                    passedList[#passedList + 1] = label
+                elseif #upcoming < RECAP_NEXT_MAX then
+                    local a = tonumber(e.a)
+                    if e.a == nil or (a and self.Index.maps[a]) then
+                        upcoming[#upcoming + 1] = label .. zoneSuffix(self, e)
+                    end
+                end
+            elseif KIND[e.k] and type(e.q) == "number" then
+                local q = e.q
+                total = total + 1
+                local key = v2 and entryKey(letter, guide, e, index) or nil
+                local qName = recapQuestName(self, q, e)
+                local qStep = (RECAP_KIND_WORD[e.k] or "Paso") .. ": " .. qName
+                if reader.completed(q) then
+                    doneCount = doneCount + 1
+                    if not completedSeen[q] then
+                        completedSeen[q] = true
+                        completedList[#completedList + 1] = qName
+                    end
+                elseif reader.active(q) then
+                    if not inLogSeen[q] then
+                        inLogSeen[q] = true
+                        inLogList[#inLogList + 1] = qName .. (reader.ready(q) and " (lista para entregar)" or " (en curso)")
+                    end
+                    local entryDone = e.k == "a"
+                        or (e.k == "o" and (reader.ready(q) or (not inInstance and reader.objDone(q, e.o))))
+                        or (done and key and done[key])
+                        or (skipped and skipped[q])
+                    if entryDone then
+                        doneCount = doneCount + 1
+                    elseif #upcoming < RECAP_NEXT_MAX then
+                        upcoming[#upcoming + 1] = qStep .. zoneSuffix(self, e)
+                    end
+                elseif skipped and skipped[q] then
+                    doneCount = doneCount + 1
+                    if not passedQuestSeen[q] then
+                        passedQuestSeen[q] = true
+                        markedList[#markedList + 1] = qName .. " (saltada)"
+                    end
+                elseif done and key and done[key] then
+                    doneCount = doneCount + 1
+                    markedList[#markedList + 1] = qStep .. " (marcado a mano)"
+                elseif pass and e.k == "a" and index < pass.frontier then
+                    passedQ[q] = true
+                    doneCount = doneCount + 1
+                    if not passedQuestSeen[q] then
+                        passedQuestSeen[q] = true
+                        passedList[#passedList + 1] = qStep
+                    end
+                elseif pass and e.k ~= "a" and (passedQ[q] or index < pass.frontier) then
+                    doneCount = doneCount + 1
+                    if not passedQuestSeen[q] then
+                        passedQuestSeen[q] = true
+                        passedList[#passedList + 1] = qStep
+                    end
+                else
+                    if e.k == "a" then pickedUpcoming[q] = true end
+                    if #upcoming < RECAP_NEXT_MAX and (e.k == "a" or pickedUpcoming[q]) then
+                        local a = tonumber(e.a)
+                        if e.a == nil or (a and self.Index.maps[a]) then
+                            upcoming[#upcoming + 1] = qStep .. zoneSuffix(self, e)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local title = guideRangeTitle(guide)
+    local remaining = math.max(0, total - doneCount)
+    local lines = {
+        "Guía: " .. title .. (two and (" · Guía " .. tostring(letter)) or ""),
+        "Progreso: " .. (doneCount == 1 and "1 paso ya hecho de " or (doneCount .. " pasos ya hechos de ")) .. total
+            .. " (" .. remaining .. (remaining == 1 and " pendiente)" or " pendientes)")
+            .. (pass and not pass.catchUp and " · ponerse al día desactivado" or ""),
+        "",
+        "Misiones ya entregadas (" .. #completedList .. "):",
+    }
+    if #completedList == 0 then lines[#lines + 1] = "  Ninguna."
+    else for _, item in ipairs(completedList) do lines[#lines + 1] = "  " .. item end end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "Misiones en el registro (" .. #inLogList .. "):"
+    if #inLogList == 0 then lines[#lines + 1] = "  Ninguna."
+    else for _, item in ipairs(inLogList) do lines[#lines + 1] = "  " .. item end end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "Pasos pasados al ponerse al día (" .. #passedList .. "):"
+    if #passedList == 0 then lines[#lines + 1] = "  Ninguno."
+    else for _, item in ipairs(passedList) do lines[#lines + 1] = "  " .. item end end
+    if #markedList > 0 then
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = "Pasos marcados o saltados (" .. #markedList .. "):"
+        for _, item in ipairs(markedList) do lines[#lines + 1] = "  " .. item end
+    end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "Lo que sigue (" .. (#upcoming == 1 and "próximo paso" or ("próximos " .. #upcoming .. " pasos")) .. "):"
+    if #upcoming == 0 then lines[#lines + 1] = "  No quedan pasos pendientes en esta guía."
+    else
+        for i, item in ipairs(upcoming) do lines[#lines + 1] = "  " .. i .. ". " .. item end
+    end
+
+    return {
+        guide = guide, title = title, letter = letter, two = two,
+        total = total, done = doneCount, remaining = remaining,
+        catchUp = pass and pass.catchUp or false,
+        completed = completedList, inLog = inLogList, passed = passedList,
+        marked = markedList, upcoming = upcoming,
+        text = table.concat(lines, "\n"),
+    }
+end
+
+function ns:GuideRecap()
+    if self.CachedStates then return self:CachedStates(buildRecap, self) end
+    return buildRecap(self)
+end
+
+function ns:ShowGuideRecap(quiet)
+    local recap = self:GuideRecap()
+    if not recap then
+        if not quiet then self:Print("Ruta guiada resumen: no hay ninguna guía activa ahora.") end
+        return false
+    end
+    if not self.ShowTextWindow then return false end
+    self:ShowTextWindow(
+        "Resumen de la guía · " .. recap.title,
+        recap.text,
+        nil,
+        "Resumen de tu progreso en esta guía. Ctrl+A selecciona todo; Ctrl+C lo copia."
+    )
+    return true
+end
+
+local function currentStepShort(self, plan, recap)
+    local head = plan and plan.head
+    if head then
+        local q = self:Quest(head)
+        local step = plan.stepOf and plan.stepOf[head] and plan.steps[plan.stepOf[head]]
+        if q and q.gs then
+            local word = STEP_WORD[q.gs.k] or STEP_TITLE[q.gs.k] or "Paso"
+            return q.gs.label and (word .. ": " .. q.gs.label) or (q.n or word)
+        elseif step and step.kind == "zona" and step.ez then
+            return "Ve a " .. self:MapLabel(step.ez)
+        elseif q and type(q.n) == "string" and q.n ~= "" then
+            return (step and RECAP_VERB[step.kind] or "") .. q.n
+        end
+    end
+    if plan and plan.steps and plan.steps[1] then
+        local first = plan.steps[1]
+        if first.kind == "zona" and first.ez then return "Ve a " .. self:MapLabel(first.ez) end
+    end
+    if recap and recap.upcoming and recap.upcoming[1] then return recap.upcoming[1] end
+    return nil
+end
+
+function ns:CheckRecapNotice()
+    if not (self.saved and self.ShowNotice) then return false end
+    if self:InInstance() then
+        if self.HideNotice then self:HideNotice("guideRecap") end
+        if not self.recapShownKey and self:GuideSet() and self.saved.guided ~= false and isV2(self)
+            and (not self.RouteMode or self:RouteMode()) then
+            self.recapPending = true
+        end
+        return false
+    end
+    local plan = self.routePlan
+    if not (plan and plan.guided and self:GuideActive() and isV2(self)) then
+        self.recapShownKey = nil
+        self.recapPending = nil
+        if self.HideNotice then self:HideNotice("guideRecap") end
+        return false
+    end
+    if self.TurninNotice and self:TurninNotice() == "off" then
+        self.recapPending = nil
+        if self.HideNotice then self:HideNotice("guideRecap") end
+        return false
+    end
+    local letter = self:GuideSet()
+    local key = tostring(self.LocalRoutes) .. "|" .. tostring(letter) .. "|" .. tostring(plan.guided.name)
+    if self.recapShownKey == key and not self.recapPending then return false end
+    local blocked = self.PlayerBlocked and self:PlayerBlocked()
+    if blocked then
+        self.recapPending = key
+        return false
+    end
+    self.recapPending = nil
+    self.recapShownKey = key
+    local recap = self:GuideRecap()
+    if not (recap and recap.total > 0 and recap.done > 0) then
+        if self.HideNotice then self:HideNotice("guideRecap") end
+        return false
+    end
+    local line1 = truncate(recap.title, NOTICE_TEXT_MAX)
+    local doneWord = recap.done == 1 and "1 paso ya hecho de " or (recap.done .. " pasos ya hechos de ")
+    local nowText = currentStepShort(self, plan, recap)
+    local line2 = truncate(doneWord .. recap.total .. (nowText and (" · ahora: " .. nowText) or ""), NOTICE_LINE2_MAX)
+    self:ShowNotice({
+        key = "guideRecap", icon = "Glyph_path", color = "accent", priority = 0, duration = RECAP_NOTICE_SECONDS,
+        line1 = line1, line2 = line2,
+        actions = {{label = "Ver", width = 64,
+            run = function() ns:ShowGuideRecap(true) end,
+            tooltip = {"Ver el resumen de la guía", "Muestra lo completado, lo pasado al ponerse al día y lo que sigue.",
+                "También: /smapas guia resumen"}}},
+    })
+    return true
+end
+
+local plainRefresh = ns.Refresh
+if plainRefresh then
+    function ns:Refresh()
+        local res = plainRefresh(self)
+        if self.CheckRecapNotice then self:CheckRecapNotice() end
+        return res
+    end
+end
+
 -- /smapas api: one more line with the functions and events of the guided route, only with route data installed (the
 -- lines of always do not change). Whether the client accepts each event (C_EventUtils.IsEventValid; not asked inside an
 -- instance).
@@ -1559,7 +1905,7 @@ end
 -- the race and the level choose; «siguiente» / «anterior» fix the neighbour guide of the chain (saved.guideName); «si» /
 -- «no» turn the guided order on or off (saved.guided); «a» / «b» choose the set of guides; no word: the guide in use.
 local GUIDE_USAGE = "Uso: /smapas guia [auto | siguiente | anterior | si | no | a | b]"
-local function usage(self) return GUIDE_USAGE .. (isV2(self) and " · /smapas guia hecho [no] · mazmorras si|no · alcanzar si|no · diag" or "") end
+local function usage(self) return GUIDE_USAGE .. (isV2(self) and " · /smapas guia hecho [no] · mazmorras si|no · alcanzar si|no · resumen · diag" or " · resumen") end
 function ns:GuideCommand(arg)
     local letter, _, two = self:GuideSet()
     if not letter then
@@ -1605,12 +1951,14 @@ function ns:GuideCommand(arg)
         if rest == "si" or rest == "s\195\173" or rest == "no" then
             local on = rest ~= "no"
             self.saved.guideCatchUp = on
-            return apply("Ruta guiada: ponerse al día " .. (on and "activado: se saltan las recogidas anteriores a tu progreso."
-                or "desactivado: se muestran todas las recogidas pendientes de la guía."))
+            return apply("Ruta guiada: ponerse al día " .. (on and "activado: se pasan los pasos y recogidas anteriores a tu progreso."
+                or "desactivado: se muestran todos los pasos y recogidas pendientes de la guía."))
         end
         self:Print("Ruta guiada: ponerse al día " .. (self.saved.guideCatchUp == false and "desactivado" or "activado")
             .. ". Uso: /smapas guia alcanzar si | no")
         return rest == nil
+    elseif word == "resumen" then
+        return self:ShowGuideRecap(false)
     elseif word == "diag" then
         if self:InInstance() then
             self:Print("Ruta guiada diag: no disponible dentro de una instancia.")

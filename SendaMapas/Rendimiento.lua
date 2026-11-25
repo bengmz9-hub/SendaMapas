@@ -12,7 +12,7 @@ local MEASURED = {
     "RenderFilterOptions", "UpdateArrow", "TurnArrow", "PickNearestSpot", "RouteLeg", "GuideTick", "GuideEvent",
     "RefreshMapPins", "RefreshQuestPins", "RefreshRoute", "RefreshMinimapPins", "UpdateMinimapPins", "MeasureMinimapPins",
     "PlaceMinimapPins", "UpdateMarkedQuest", "AutoNavigate", "CheckHearthNotice", "CheckNextZoneNotice", "CheckOrphanNotice",
-    "CheckZone", "LoadMap",
+    "CheckZone", "LoadMap", "UpdateCartel",
 }
 ns.perfMeasured = MEASURED            -- for the tests
 

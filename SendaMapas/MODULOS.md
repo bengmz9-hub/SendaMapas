@@ -1,4 +1,4 @@
-# Módulos de SendaMapas 0.7.1
+# Módulos de SendaMapas 0.7.2
 
 Generado por `preparar_sendamapas.py`. Tamaños reales en bytes de `Data/<módulo>.lua`.
 

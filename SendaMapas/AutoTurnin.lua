@@ -203,6 +203,7 @@ function ns:ApplyNoticeSetting()
         notices.accepted = nil                              -- the automatic acceptance
         notices.guideMark, notices.guideOrphan = nil, nil   -- the marks of the guided route and its orphan quests
         notices.trainer = nil                               -- the class trainer reminder (Instructor.lua)
+        notices.guideRecap = nil                            -- the recap of a guide just changed (Guia.lua)
         self:RenderNotice()
     end
 end
