@@ -394,6 +394,9 @@ function ns:StartupLoad(attempt)
     if attempt == 1 then self.startupSerial = (self.startupSerial or 0) + 1 end     -- a new entering drops the older chain
     local serial = self.startupSerial
     self:LoadCompleted()
+    -- Initialize may already have picked the guide of this zone with a completed list that was not ready yet: pick again
+    -- once with the list just read (Guia.lua keeps ns.zoneGuideFor to do it once per zone)
+    if attempt == 1 then self.zoneGuideFor = nil end
     self:CheckZone()
     -- Logged in or /reload as a ghost: the client may not give the position at once, so the corpse arrow is asked
     -- again on every startup attempt (Arrow.lua also checks on PLAYER_ENTERING_WORLD).
@@ -1055,12 +1058,20 @@ events:SetScript("OnEvent", function(_, event, name)
         if ns.HideNotice then ns:HideNotice("hearth"); ns:HideNotice("hearth_use"); ns:HideNotice("nextZone") end   -- notices of the zone left
         if ns.ResetNameCaches then ns:ResetNameCaches() end
         if ns.ResetArrowCache then ns:ResetArrowCache() end
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0.5, function()
-                if ns.ResetNameCaches then ns:ResetNameCaches() end      -- the map of the player may have changed since the event
-                ns:CheckZone()
-            end)
-        else ns:CheckZone() end
+        local function zoneEntered()
+            if ns.ResetNameCaches then ns:ResetNameCaches() end      -- the map of the player may have changed since the event
+            -- the completed quests are read again on entering a zone (never inside an instance), so the guided route of
+            -- the zone is judged with what the character has done by now. Decided with the NEW zone: ns:InInstance()
+            -- would still look at ns.currentZone / ns.saved.map, which hold the zone left (CheckZone updates them below).
+            local zone = ns:CurrentZoneId()
+            local info = zone and ns.Index.maps[zone]
+            if not ns.Call(IsInInstance) and not (info and info.g == "MAZ") then
+                ns:LoadCompleted()
+                ns.routeCache = nil
+            end
+            ns:CheckZone()
+        end
+        if C_Timer and C_Timer.After then C_Timer.After(0.5, zoneEntered) else zoneEntered() end
     elseif event == "QUEST_TURNED_IN" then
         -- First argument is the quest id: remember the hand-in on this character.
         if type(name) == "number" then

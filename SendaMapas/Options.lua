@@ -951,6 +951,7 @@ function ns:SetListOrder(word, quiet)
     if mode ~= before then self.routeHold = nil end
     self.saved.listOrder = mode
     if not quiet then self:Print(LIST_ORDER_TEXT[mode]) end
+    if mode == "ruta" and self.PickZoneGuide then self:PickZoneGuide(true) end   -- the zone entered in another order (Guia.lua)
     self:Refresh()
     self:RenderOptions()
     return true
@@ -1329,6 +1330,8 @@ function ns:ApplyImportedSettings(imported, previous)
     if imported.listOrder ~= nil then
         self.routeHold, self.routeCache = nil, nil
         if saved.listOrder == "pasos" and previous.listOrder ~= "pasos" then self.selected = nil end
+        -- the order «Ruta» imported: the guide of the zone the player is in is judged again (Guia.lua)
+        if saved.listOrder == "ruta" and self.RepickZoneGuide then self:RepickZoneGuide() end
     end
     if imported.progressSound ~= nil then self.progressSeen = nil end
     if saved.hideTurnin and self.markerQuest and self:EntryState(self.markerQuest) == "turnin" and self.ClearWaypoint then

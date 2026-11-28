@@ -864,7 +864,7 @@ end
 -- else, from the first guide of the chain with hi >= level, the first one with something actionable now (a guide with
 -- only waiting entries is passed over). ids: those of ns:Entries() (asked when not given).
 function ns:CurrentGuide(reader, ids)
-    local _, guides = self:GuideSet()
+    local letter, guides = self:GuideSet()
     if not guides then return nil, {} end
     local who = self.context or {}
     reader = reader or newReader(self)
@@ -876,11 +876,105 @@ function ns:CurrentGuide(reader, ids)
         end
     end
     local inIds
-    local guide = Guide.Current(chain, tonumber(who.level) or 1, function(g)
+    local function hasPending(g)
         inIds = inIds or idSet(ids or (self.activeData and self:Entries()))
         return #(collect(self, reader, g, self.activeData, inIds, true)) > 0
-    end)
+    end
+    -- the guide picked on entering the zone (session only, ns:PickZoneGuide) while it has something actionable anywhere;
+    -- once it has nothing left, the choice by level below takes over again
+    local zoneGuide = self.zoneGuide
+    if zoneGuide then
+        local picked
+        if zoneGuide.set == letter then
+            for _, g in ipairs(guides) do
+                if type(g) == "table" and g.name == zoneGuide.name then picked = g; break end
+            end
+        end
+        if picked and hasPending(picked) then return picked, chain end
+        self.zoneGuide = nil
+    end
+    local guide = Guide.Current(chain, tonumber(who.level) or 1, hasPending)
     return guide, chain
+end
+
+-- Entering a zone (Guia.lua wraps ns:CheckZone, and the end of a combat repeats it): switch the guided route to the guide
+-- of the player's chain that has steps still pending in that zone, so the plan starts where the player really is. Session
+-- only: ns.zoneGuide = {name, set, zone} is never saved. The candidates are the guides of the chain from the first one with
+-- hi >= level, in chain order, up to the first one that starts more than ZONE_LEVEL_AHEAD levels above the player; the
+-- chosen one is the first with a pending step whose zone is this one (collect applies the catch-up, so what lies before the
+-- player's progress is already passed). A zone without such a guide leaves ns.zoneGuide as it was (sticky: crossing a city
+-- on the way neither flips the guide nor repeats the recap). Done once per real zone change (ns.zoneGuideFor).
+-- noRefresh: the caller refreshes. Returns true when the guide in use changed.
+local ZONE_LEVEL_AHEAD = 2
+function ns:PickZoneGuide(noRefresh)
+    local saved = self.saved
+    local letter, guides = self:GuideSet()
+    if not (saved and guides) or saved.guided == false then return false end
+    if type(saved.guideName) == "string" then                       -- a guide fixed by hand wins
+        for _, g in ipairs(guides) do
+            if type(g) == "table" and g.name == saved.guideName then return false end
+        end
+    end
+    if self:InInstance() then return false end
+    local zone = self.currentZone
+    local info = zone and self.Index.maps[zone]
+    if not info or info.g == "MAZ" then return false end
+    if not (self.RouteMode and self:RouteMode()) then return false end
+    if not self.context or self.zoneGuideFor == zone then return false end
+    if self.Call(InCombatLockdown) then
+        self.pendingZoneGuide = true                                 -- picked on PLAYER_REGEN_ENABLED
+        return false
+    end
+    self.pendingZoneGuide = nil
+    local who = self.context
+    local level = tonumber(who.level) or 1
+    local chain = Guide.Chain(guides, who.race)
+    local start
+    for index, g in ipairs(chain) do
+        local hi = tonumber(g.hi)
+        if not hi or hi >= level then start = index; break end
+    end
+    if not start then return false end            -- no chain yet (race unknown): not marked, a later CheckZone picks
+    self.zoneGuideFor = zone
+    local reader, inIds = newReader(self), idSet(self.activeData and self:Entries())
+    local found
+    for index = start, #chain do
+        local g = chain[index]
+        local lo = tonumber(g.lo)
+        if lo and lo > level + ZONE_LEVEL_AHEAD then break end
+        local ok, items = pcall(collect, self, reader, g, self.activeData, inIds, false)
+        if ok then
+            for _, item in ipairs(items) do
+                if item.a == zone then found = g; break end
+            end
+            if found then break end
+        elseif self.ReportIssue then
+            self:ReportIssue("Ruta guiada", items)
+        end
+    end
+    if not found then return false end
+    local old = self.zoneGuide
+    local changed = not (old and old.name == found.name and old.set == letter)
+    self.zoneGuide = {name = found.name, set = letter, zone = zone}
+    if changed then
+        self.routeCache = nil
+        if not noRefresh then self:Refresh() end
+    end
+    return changed
+end
+
+-- «auto» and the switch of set: forget the guide of the zone and pick again for the zone the player is in.
+local function resetZoneGuide(self)
+    self.zoneGuide, self.zoneGuideFor, self.pendingZoneGuide = nil, nil, nil
+    self:PickZoneGuide(true)
+end
+
+-- A setting that changes what is pending (dungeon branches, catch-up, imported list order): judge the zone the player is
+-- in again, keeping the guide in use when no guide of the chain has steps there (sticky, as on entering a zone).
+-- The caller refreshes.
+function ns:RepickZoneGuide()
+    self.zoneGuideFor = nil
+    return self:PickZoneGuide(true)
 end
 
 -- The guided plan for the ids of ns:Entries(), or nil (no guide, nothing actionable): then the plain planner.
@@ -1191,6 +1285,12 @@ end
 
 function ns:GuideEvent(event, ...)
     if event == "PLAYER_REGEN_ENABLED" then
+        -- a zone entered in combat: its guide is picked now, unless Core has not loaded the zone yet (ns.pendingZone): the
+        -- CheckZone it runs then picks (the wrapper), with the zone really loaded
+        if self.saved and self.pendingZoneGuide and not self.pendingZone then
+            self.pendingZoneGuide = nil
+            self:PickZoneGuide()
+        end
         if self.saved and self.recapPending and self.CheckRecapNotice then return self:CheckRecapNotice() end
         return false
     end
@@ -1840,6 +1940,18 @@ if plainRefresh then
     end
 end
 
+-- Every real zone change (and login / reload, through StartupLoad) goes through ns:CheckZone: pick the guide of the zone
+-- afterwards; a repeated call in the same zone does nothing.
+local plainCheckZone = ns.CheckZone
+if plainCheckZone then
+    function ns:CheckZone(...)
+        local res = plainCheckZone(self, ...)
+        local ok, err = pcall(self.PickZoneGuide, self)
+        if not ok and self.ReportIssue then self:ReportIssue("Ruta guiada", err) end
+        return res
+    end
+end
+
 -- /smapas api: one more line with the functions and events of the guided route, only with route data installed (the
 -- lines of always do not change). Whether the client accepts each event (C_EventUtils.IsEventValid; not asked inside an
 -- instance).
@@ -1886,6 +1998,7 @@ function ns:SetGuideSet(letter, quiet)
         self.saved.guideName = nil
         self.routeCache = nil
         chainCache.guides, chainCache.key, chainCache.chain = nil, nil, nil
+        resetZoneGuide(self)
     end
     if not quiet then self:Print("Ruta guiada: guía " .. letter .. " en uso.") end
     self:Refresh()
@@ -1929,12 +2042,14 @@ function ns:GuideCommand(arg)
     end
     if word == "si" or word == "s\195\173" then
         self.saved.guided = true
+        self:PickZoneGuide(true)              -- the zone entered while the guided order was off: pick for it now
         return apply("Ruta guiada: activada en el orden Ruta.")
     elseif word == "no" then
         self.saved.guided = false
         return apply("Ruta guiada: desactivada; el orden Ruta usa su planificador de siempre.")
     elseif word == "auto" then
         self.saved.guideName = nil
+        resetZoneGuide(self)
         return apply("Ruta guiada: guía automática por raza y nivel.")
     elseif word == "a" or word == "b" then
         return self:SetGuideSet(word:upper())
@@ -1942,6 +2057,7 @@ function ns:GuideCommand(arg)
         if rest == "si" or rest == "s\195\173" or rest == "no" then
             local on = rest ~= "no"
             self.saved.guideDungeons = on
+            self:RepickZoneGuide()
             return apply("Ruta guiada: ramas de mazmorra " .. (on and "activadas." or "desactivadas."))
         end
         self:Print("Ruta guiada: ramas de mazmorra " .. (self.saved.guideDungeons and "activadas" or "desactivadas")
@@ -1951,6 +2067,7 @@ function ns:GuideCommand(arg)
         if rest == "si" or rest == "s\195\173" or rest == "no" then
             local on = rest ~= "no"
             self.saved.guideCatchUp = on
+            self:RepickZoneGuide()
             return apply("Ruta guiada: ponerse al día " .. (on and "activado: se pasan los pasos y recogidas anteriores a tu progreso."
                 or "desactivado: se muestran todos los pasos y recogidas pendientes de la guía."))
         end
@@ -2047,7 +2164,10 @@ function ns:GuideCommand(arg)
         end
         self:Print("Ruta guiada" .. (two and (" " .. letter) or "") .. ": " .. name .. " · "
             .. (self.saved.guided == false and "desactivada" or "activada") .. " · "
-            .. (type(self.saved.guideName) == "string" and "fijada a mano" or "automática") .. counts .. ". " .. usage(self))
+            .. (type(self.saved.guideName) == "string" and "fijada a mano"
+                or ((guide and self.zoneGuide and self.zoneGuide.name == guide.name)
+                    and ("automática por la zona " .. self:MapLabel(self.zoneGuide.zone)) or "automática"))
+            .. counts .. ". " .. usage(self))
         return true
     end
     self:Print(usage(self))
