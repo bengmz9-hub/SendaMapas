@@ -1,11 +1,11 @@
-# Senda Mapas 0.7.3
+# Senda Mapas 0.7.4
 
 - Addon de guía de misiones **por mapa** para **WoW Forever** (`Interface 16001`), en español.
 - Enfocado en **leveo (Alianza)**, en una sola carpeta y sin dependencias externas.
 - Carga los datos de cada mapa bajo demanda al entrar en la zona.
 
 ## Instalación
-- Cierra el juego y descomprime `SendaMapas-0.7.3.zip` en `World of Warcraft\_forever_\Interface\AddOns\`.
+- Cierra el juego y descomprime `SendaMapas-0.7.4.zip` en `World of Warcraft\_forever_\Interface\AddOns\`.
 - Debe quedar una sola carpeta `AddOns\SendaMapas\` con `SendaMapas.toc` dentro.
 - Activa **Senda Mapas** en la lista de addons.
 
@@ -26,3 +26,6 @@
 - **Instructor de clase**: aviso junto al panel al llegar a un nivel par (del 4 al 60) con los botones «Ir» (flecha al instructor de tu clase más cercano) y «Hecho»; tras abrir la ventana del instructor dice además cuántos hechizos te esperan y cuánto cuestan (`/smapas instructor [si | no | ir | hecho]`).
 - **Diagnóstico**: `/smapas api` (o la ventana de diagnóstico) dice qué funciones y eventos del juego que usa el addon faltan en tu cliente y lo guarda en `SendaMapasDB.apiDiag`; `/smapas rendimiento [si | no | ver | borrar]` mide cuánto tarda cada parte del addon mientras juegas y deja el informe en una ventana copiable y en `SendaMapasDB.perfReport`.
 - **Comodidad**: entrega automática (pausable con `Shift`), avisos junto al panel sin escribir en el chat, exportar/importar ajustes y atajos de teclado.
+
+## Créditos
+- Los datos de misiones, PNJ, objetos y coordenadas proceden de **QuestieDB**, la base de datos del proyecto [Questie](https://github.com/Questie/QuestieDB) (licencia GPL-3.0), usados con permiso de sus autores. Gracias al equipo de Questie.
